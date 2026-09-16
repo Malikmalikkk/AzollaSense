@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AzollaSense</title>
+  <meta name="description"
+    content="AzollaSense: Intelligent environmental sensing, autonomous pond telemetry, and computer vision browning detection for precision Azolla cultivation.">
+  <link rel="icon" type="image/png" href="assets/logo.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+  <!-- Top Presentation Toolbar -->
+  <header class="presentation-bar">
+    <div class="presentation-title">
+      <img src="assets/logo.png" alt="AzollaSense Logo">
+      <span>AzollaSense IoT</span>
+    </div>
+    <button id="toggle-sim-btn" class="tool-btn" title="Open real-time IoT hardware simulator">
+      <span>🧪</span> IoT Simulator
+    </button>
+  </header>
+
+  <!-- Main Viewport Wrap -->
+  <main class="app-viewport">
+
+    <!-- Phone Screen Canvas -->
+    <div class="app-screen">
+
+      <!-- Global App Header -->
+      <header class="main-header">
+        <a href="#" id="brand-logo-home" class="brand-wrapper" title="Return to Dashboard">
+          <h1 class="brand-text">
+            AzollaSense
+            <!-- Stylized 4-leaf clover brand accent -->
+            <svg class="brand-leaf-accent" viewBox="0 0 32 32" fill="none">
+              <path d="M16 16C12 11 11 5 16 3C21 5 20 11 16 16Z" fill="#388e3c" />
+              <path d="M16 16C21 12 27 11 29 16C27 21 21 20 16 16Z" fill="#2e7d32" />
+              <path d="M16 16C16 21 21 27 16 29C11 27 12 21 16 16Z" fill="#4caf50" />
+              <path d="M16 16C11 20 5 21 3 16C5 11 11 12 16 16Z" fill="#66bb6a" />
+              <circle cx="16" cy="16" r="2.5" fill="#1b5e20" />
+            </svg>
+          </h1>
+        </a>
+
+        <button id="profile-btn" class="profile-btn" title="View Farm Operator Profile">
+          <svg class="profile-avatar-svg" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" fill="#e8f5e9" stroke="#3b7b4e" stroke-width="1.8" />
+            <circle cx="12" cy="9" r="3.6" fill="#3b7b4e" />
+            <path d="M6 18.5c0-3.2 2.7-5.8 6-5.8s6 2.6 6 5.8" fill="#3b7b4e" />
+          </svg>
+        </button>
+      </header>
+
+      <!-- Scrollable Screen Content Container -->
+      <div class="screen-scroll-container">
+
+        <!-- ====================================================================
+               SCREEN 2: DASHBOARD VIEW
+               ==================================================================== -->
+        <section id="view-dashboard" class="tab-panel active" aria-label="Dashboard Overview">
+
+          <div class="sub-heading-row">
+            <h2 class="page-title">Welcome Back!</h2>
+            <button class="quick-chevron-btn" onclick="document.querySelector('[data-tab=status]').click()"
+              title="Go to System Status">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
+                stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="7 17 12 12 7 7"></polyline>
+                <polyline points="13 17 18 12 13 7"></polyline>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Live Camera Feed (Concrete Tank with Azolla) -->
+          <div class="tank-feed-card">
+            <div class="tank-image-wrapper">
+              <img src="assets/tank.png" alt="Live Camera View of Azolla Cultivation Tank">
+
+              <!-- Overlays -->
+              <div class="feed-live-badge">
+                <span class="live-pulse-dot"></span>
+                <span>LIVE FEED</span>
+              </div>
+
+              <button id="toggle-cv-overlay" class="feed-toggle-btn">
+                <span>👁️</span> AI Vision
+              </button>
+
+              <!-- Computer Vision Bounding Boxes -->
+              <div id="cv-overlay-layer" class="cv-overlay-layer active">
+                <!-- Sector A: Healthy -->
+                <div class="cv-box healthy" style="top: 15%; left: 8%; width: 38%; height: 42%;">
+                  <span class="cv-tag">Sector A: Healthy (98%)</span>
+                </div>
+
+                <!-- Sector B: Browning Detected -->
+                <div class="cv-box anomaly" style="top: 18%; right: 10%; width: 40%; height: 44%;">
+                  <span class="cv-tag">Sector B: Browning 34% (Heat Stress)</span>
+                </div>
+
+                <!-- Sector C: Healthy -->
+                <div class="cv-box healthy" style="bottom: 12%; left: 10%; width: 36%; height: 32%;">
+                  <span class="cv-tag">Sector C: Healthy (95%)</span>
+                </div>
+
+                <!-- Sector D: Browning -->
+                <div class="cv-box anomaly" style="bottom: 10%; right: 14%; width: 34%; height: 30%;">
+                  <span class="cv-tag">Sector D: Browning 28%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2x2 Sensor Telemetry Grid -->
+          <div class="telemetry-grid">
+
+            <!-- Card 1: Water Level -->
+            <div class="sensor-card water">
+              <div class="sensor-icon-box">
+                <!-- Custom Droplet SVG -->
+                <svg viewBox="0 0 36 36">
+                  <path d="M18 4C18 4 8 16 8 23C8 28.5228 12.4772 33 18 33C23.5228 33 28 28.5228 28 23C28 16 18 4 18 4Z"
+                    fill="url(#waterGrad)" />
+                  <path d="M14 22C14 20 16 16 18 14C17 17 18 19 16 22C15 23 14 23 14 22Z" fill="#ffffff"
+                    opacity="0.6" />
+                  <defs>
+                    <linearGradient id="waterGrad" x1="18" y1="4" x2="18" y2="33" gradientUnits="userSpaceOnUse">
+                      <stop stop-color="#42a5f5" />
+                      <stop offset="1" stop-color="#1976d2" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+              </div>
+              <div class="sensor-info">
+                <span class="sensor-label">Water Level</span>
+                <span class="sensor-value val-water">26 cm</span>
+              </div>
+            </div>
+
+            <!-- Card 2: Temperature -->
+            <div class="sensor-card temperature">
+              <div class="sensor-icon-box">
+                <!-- Custom Thermometer SVG -->
+                <svg viewBox="0 0 36 36">
+                  <path
+                    d="M21 21.3V8C21 6.34315 19.6569 5 18 5C16.3431 5 15 6.34315 15 8V21.3C13.2 22.7 12 25 12 27.5C12 30.5 14.7 33 18 33C21.3 33 24 30.5 24 27.5C24 25 22.8 22.7 21 21.3Z"
+                    fill="#ffffff" stroke="#c97d50" stroke-width="1.5" />
+                  <path
+                    d="M19 23V11C19 10.4 18.6 10 18 10C17.4 10 17 10.4 17 11V23C15.8 24 15 25.4 15 27C15 28.7 16.3 30 18 30C19.7 30 21 28.7 21 27C21 25.4 20.2 24 19 23Z"
+                    fill="#e53935" />
+                  <line x1="21" y1="12" x2="23" y2="12" stroke="#c97d50" stroke-width="1.5" />
+                  <line x1="21" y1="16" x2="23" y2="16" stroke="#c97d50" stroke-width="1.5" />
+                </svg>
+              </div>
+              <div class="sensor-info">
+                <span class="sensor-label">Temperature</span>
+                <span class="sensor-value val-temp">36°C</span>
+              </div>
+            </div>
+
+            <!-- Card 3: pH Level -->
+            <div class="sensor-card ph">
+              <div class="sensor-icon-box">
+                <!-- Droplet with pH SVG -->
+                <svg viewBox="0 0 36 36">
+                  <path d="M18 4C18 4 8 16 8 23C8 28.5228 12.4772 33 18 33C23.5228 33 28 28.5228 28 23C28 16 18 4 18 4Z"
+                    fill="url(#phGrad)" />
+                  <text x="18" y="25.5" font-family="'Plus Jakarta Sans', sans-serif" font-size="10.5" font-weight="800"
+                    fill="#ffffff" text-anchor="middle">pH</text>
+                  <defs>
+                    <linearGradient id="phGrad" x1="18" y1="4" x2="18" y2="33" gradientUnits="userSpaceOnUse">
+                      <stop stop-color="#26a69a" />
+                      <stop offset="1" stop-color="#00897b" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+              </div>
+              <div class="sensor-info">
+                <span class="sensor-label">pH Level</span>
+                <span class="sensor-value val-ph">7.2</span>
+              </div>
+            </div>
+
+            <!-- Card 4: Pond Coverage -->
+            <div class="sensor-card coverage">
+              <div class="sensor-icon-box">
+                <!-- Azolla leaf on pond ripple -->
+                <svg viewBox="0 0 36 36">
+                  <!-- Water ripple -->
+                  <ellipse cx="18" cy="27" rx="14" ry="4.5" fill="#b2dfdb" opacity="0.8" />
+                  <ellipse cx="18" cy="27" rx="9" ry="2.5" fill="#4db6ac" opacity="0.6" />
+                  <!-- Leaves -->
+                  <path d="M18 19C15 13 14 8 18 6C22 8 21 13 18 19Z" fill="#388e3c" />
+                  <path d="M18 19C22 15 27 14 28 18C26 22 21 21 18 19Z" fill="#2e7d32" />
+                  <path d="M18 19C14 21 9 22 8 18C10 14 15 15 18 19Z" fill="#66bb6a" />
+                  <circle cx="18" cy="19" r="2.2" fill="#1b5e20" />
+                </svg>
+              </div>
+              <div class="sensor-info">
+                <span class="sensor-label">Pond Coverage</span>
+                <span class="sensor-value val-cov">75%</span>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Browning Detection Section -->
+          <div class="section-title-row">
+            <svg class="section-icon-svg" viewBox="0 0 24 24">
+              <path
+                d="M17 8C8 10 5.9 16.17 3.82 21.34L5.71 22l1-2.3A4.49 4.49 0 008 20C19 20 22 3 22 3c-1 2-8 2.25-13 3.25S2 11.5 2 13.5s1.75 3.75 1.75 3.75C7 8 17 8 17 8z" />
+            </svg>
+            <h3 class="section-title-text">Browning Detection</h3>
+          </div>
+
+          <!-- Secondary Tank Inspection View -->
+          <div class="tank-feed-card">
+            <div class="tank-image-wrapper">
+              <img src="assets/tank.png" alt="Azolla Browning Anomaly Camera View">
+              <div class="feed-live-badge"
+                style="background: rgba(183, 28, 28, 0.85); border-color: rgba(255, 138, 128, 0.4); color: #ffebee;">
+                <span class="live-pulse-dot" style="background: #ff5252; box-shadow: 0 0 8px #ff5252;"></span>
+                <span>SPECTRAL AI MONITOR</span>
+              </div>
+
+              <!-- Bounding highlights -->
+              <div class="cv-box anomaly" style="top: 20%; right: 12%; width: 44%; height: 50%;">
+                <span class="cv-tag">Sector B: Stress Identified</span>
+              </div>
+            </div>
+          </div>
+
+        </section>
+
+
+        <!-- ====================================================================
+               SCREEN 3: STATUS VIEW
+               ==================================================================== -->
+        <section id="view-status" class="tab-panel" aria-label="System Status">
+
+          <div class="status-top-bar">
+            <button id="status-back-btn" class="back-circle-btn" title="Back to Dashboard">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"></line>
+                <polyline points="12 19 5 12 12 5"></polyline>
+              </svg>
+            </button>
+
+            <h2 class="status-screen-title">Status</h2>
+
+            <button id="status-logs-pill" class="logs-pill-btn" title="View historical telemetry logs">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M4 20h3v-7H4v7zm6 0h3v-13h-3v13zm6 0h3v-9h-3v9z" />
+              </svg>
+              <span>Logs</span>
+            </button>
+          </div>
+
+          <!-- Tank View with Overlapping System Status Center Badge -->
+          <div class="tank-status-container">
+            <div class="tank-feed-card" style="margin-bottom: 0;">
+              <div class="tank-image-wrapper">
+                <img src="assets/tank.png" alt="Azolla Cultivation System Overview Tank">
+              </div>
+            </div>
+
+            <!-- Overlapping Centered Badge with Decorative Leaves -->
+            <div class="system-status-badge">
+              <svg class="status-badge-leaf" viewBox="0 0 24 24" fill="#69f0ae">
+                <path d="M17 8C8 10 5.9 16.17 3.82 21.34L5.71 22c5-3 12-5 14-12-1 2-5 3-9 3 0-1 4-4 6-5z" />
+              </svg>
+              <span>System Status</span>
+              <svg class="status-badge-leaf" viewBox="0 0 24 24" fill="#69f0ae" style="transform: scaleX(-1);">
+                <path d="M17 8C8 10 5.9 16.17 3.82 21.34L5.71 22c5-3 12-5 14-12-1 2-5 3-9 3 0-1 4-4 6-5z" />
+              </svg>
+            </div>
+          </div>
+
+          <!-- Sensor Cards Grid (Synchronized) -->
+          <div class="telemetry-grid">
+
+            <div class="sensor-card water">
+              <div class="sensor-icon-box">
+                <svg viewBox="0 0 36 36">
+                  <path d="M18 4C18 4 8 16 8 23C8 28.5228 12.4772 33 18 33C23.5228 33 28 28.5228 28 23C28 16 18 4 18 4Z"
+                    fill="url(#waterGrad2)" />
+                  <defs>
+                    <linearGradient id="waterGrad2" x1="18" y1="4" x2="18" y2="33" gradientUnits="userSpaceOnUse">
+                      <stop stop-color="#42a5f5" />
+                      <stop offset="1" stop-color="#1976d2" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+              </div>
+              <div class="sensor-info">
+                <span class="sensor-label">Water Level</span>
+                <span class="sensor-value val-water">26 cm</span>
+              </div>
+            </div>
+
+            <div class="sensor-card temperature">
+              <div class="sensor-icon-box">
+                <svg viewBox="0 0 36 36">
+                  <path
+                    d="M21 21.3V8C21 6.34315 19.6569 5 18 5C16.3431 5 15 6.34315 15 8V21.3C13.2 22.7 12 25 12 27.5C12 30.5 14.7 33 18 33C21.3 33 24 30.5 24 27.5C24 25 22.8 22.7 21 21.3Z"
+                    fill="#ffffff" stroke="#c97d50" stroke-width="1.5" />
+                  <path
+                    d="M19 23V11C19 10.4 18.6 10 18 10C17.4 10 17 10.4 17 11V23C15.8 24 15 25.4 15 27C15 28.7 16.3 30 18 30C19.7 30 21 28.7 21 27C21 25.4 20.2 24 19 23Z"
+                    fill="#e53935" />
+                </svg>
+              </div>
+              <div class="sensor-info">
+                <span class="sensor-label">Temperature</span>
+                <span class="sensor-value val-temp">36°C</span>
+              </div>
+            </div>
+
+            <div class="sensor-card ph">
+              <div class="sensor-icon-box">
+                <svg viewBox="0 0 36 36">
+                  <path d="M18 4C18 4 8 16 8 23C8 28.5228 12.4772 33 18 33C23.5228 33 28 28.5228 28 23C28 16 18 4 18 4Z"
+                    fill="url(#phGrad2)" />
+                  <text x="18" y="25.5" font-family="'Plus Jakarta Sans', sans-serif" font-size="10.5" font-weight="800"
+                    fill="#ffffff" text-anchor="middle">pH</text>
+                  <defs>
+                    <linearGradient id="phGrad2" x1="18" y1="4" x2="18" y2="33" gradientUnits="userSpaceOnUse">
+                      <stop stop-color="#26a69a" />
+                      <stop offset="1" stop-color="#00897b" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+              </div>
+              <div class="sensor-info">
+                <span class="sensor-label">pH Level</span>
+                <span class="sensor-value val-ph">7.2</span>
+              </div>
+            </div>
+
+            <div class="sensor-card coverage">
+              <div class="sensor-icon-box">
+                <svg viewBox="0 0 36 36">
+                  <ellipse cx="18" cy="27" rx="14" ry="4.5" fill="#b2dfdb" opacity="0.8" />
+                  <path d="M18 19C15 13 14 8 18 6C22 8 21 13 18 19Z" fill="#388e3c" />
+                  <path d="M18 19C22 15 27 14 28 18C26 22 21 21 18 19Z" fill="#2e7d32" />
+                  <path d="M18 19C14 21 9 22 8 18C10 14 15 15 18 19Z" fill="#66bb6a" />
+                  <circle cx="18" cy="19" r="2.2" fill="#1b5e20" />
+                </svg>
+              </div>
+              <div class="sensor-info">
+                <span class="sensor-label">Pond Coverage</span>
+                <span class="sensor-value val-cov">75%</span>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Recent Logs Section -->
+          <div class="logs-header-row">
+            <div class="logs-title-group">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+              <span>Recent Logs</span>
+            </div>
+            <a href="#" id="view-all-logs-btn" class="view-all-link">View All &gt;</a>
+          </div>
+
+          <!-- List of Event Logs -->
+          <div class="logs-list">
+
+            <!-- Log 1: Pump -->
+            <div class="log-item-card pump">
+              <div class="log-icon-wrapper">
+                <!-- Water Pump SVG -->
+                <svg viewBox="0 0 36 36">
+                  <circle cx="18" cy="18" r="14" fill="#b3e5fc" opacity="0.5" />
+                  <path d="M13 13h10v10H13z" fill="#0288d1" />
+                  <circle cx="18" cy="18" r="3.5" fill="#ffffff" />
+                  <path d="M18 8v5M8 18h5M18 23v5M23 18h5" stroke="#0288d1" stroke-width="2" stroke-linecap="round" />
+                </svg>
+              </div>
+              <div class="log-content">
+                <div class="log-primary-text">Pump turned on</div>
+                <div class="log-secondary-text">Water Level Low</div>
+              </div>
+              <div class="log-time-stamp">3:45 PM</div>
+            </div>
+
+            <!-- Log 2: Browning -->
+            <div class="log-item-card browning">
+              <div class="log-icon-wrapper">
+                <!-- Warning Triangle SVG -->
+                <svg viewBox="0 0 36 36">
+                  <path d="M18 6L32 29H4L18 6Z" fill="#ffb74d" stroke="#f57c00" stroke-width="1.5"
+                    stroke-linejoin="round" />
+                  <line x1="18" y1="14" x2="18" y2="21" stroke="#5d4037" stroke-width="2.5" stroke-linecap="round" />
+                  <circle cx="18" cy="25" r="1.5" fill="#5d4037" />
+                </svg>
+              </div>
+              <div class="log-content">
+                <div class="log-primary-text">Browning Detected</div>
+                <div class="log-secondary-text val-browning-sectors">2 Sectors Affected</div>
+              </div>
+              <div class="log-time-stamp">2:20 PM</div>
+            </div>
+
+            <!-- Log 3: Canopy -->
+            <div class="log-item-card canopy">
+              <div class="log-icon-wrapper">
+                <!-- Retractable Canopy SVG -->
+                <svg viewBox="0 0 36 36">
+                  <path d="M8 14L18 8L28 14L25 24H11L8 14Z" fill="#81c784" stroke="#2e7d32" stroke-width="1.5"
+                    stroke-linejoin="round" />
+                  <path d="M11 24v5M25 24v5M18 8v16" stroke="#2e7d32" stroke-width="1.8" stroke-linecap="round" />
+                </svg>
+              </div>
+              <div class="log-content">
+                <div class="log-primary-text">Canopy Deployed</div>
+                <div class="log-secondary-text">Sunlight Duration Met</div>
+              </div>
+              <div class="log-time-stamp">1:00 PM</div>
+            </div>
+
+          </div>
+
+        </section>
+
+
+        <!-- ====================================================================
+               SCREEN 4: SETTINGS VIEW
+               ==================================================================== -->
+        <section id="view-settings" class="tab-panel" aria-label="Settings and Preferences">
+
+          <div class="settings-header-row">
+            <h2 class="page-title">Settings</h2>
+            <div class="settings-gear-badge">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path
+                  d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+              </svg>
+            </div>
+          </div>
+
+          <!-- Segmented Filter Bar (App Settings / Sensor Settings / Machine Settings) -->
+          <div class="settings-segmented-bar">
+            <button class="segment-item active" data-category="app">App Settings</button>
+            <button class="segment-item" data-category="sensor">Sensor Settings</button>
+            <button class="segment-item" data-category="machine">Machine Settings</button>
+          </div>
+
+          <!-- Group A: App Settings -->
+          <div class="settings-subgroup" data-group="app">
+
+            <div class="settings-group">
+              <div class="settings-card-list">
+
+                <!-- Notifications -->
+                <div class="setting-row-card">
+                  <div class="setting-left-side">
+                    <div class="setting-icon-container">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                      </svg>
+                    </div>
+                    <span class="setting-label">Notifications</span>
+                  </div>
+                  <div class="setting-right-side">
+                    <span id="notif-status-text" class="setting-status-text">Enabled</span>
+                    <label class="switch-control">
+                      <input id="setting-notif-toggle" type="checkbox" checked>
+                      <span class="slider-knob"></span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Cloud Sync -->
+                <div class="setting-row-card">
+                  <div class="setting-left-side">
+                    <div class="setting-icon-container">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+                      </svg>
+                    </div>
+                    <span class="setting-label">Cloud Sync</span>
+                  </div>
+                  <div class="setting-right-side">
+                    <span class="setting-status-text">Connected</span>
+                    <div class="green-check-badge">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Update Interval -->
+                <div class="setting-row-card" onclick="showToast('Update Interval set to 10 Minutes')">
+                  <div class="setting-left-side">
+                    <div class="setting-icon-container">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                        <circle cx="12" cy="10" r="3"></circle>
+                      </svg>
+                    </div>
+                    <span class="setting-label">Update Interval</span>
+                  </div>
+                  <div class="setting-right-side">
+                    <span class="setting-status-text">10 Minutes</span>
+                    <svg class="chevron-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" stroke-width="2.5">
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- Preferences Section -->
+            <div class="settings-group">
+              <h3 class="settings-group-title">Preferences</h3>
+
+              <div class="settings-card-list">
+
+                <!-- Language -->
+                <div class="setting-row-card" onclick="showToast('Language: English')">
+                  <div class="setting-left-side">
+                    <div class="setting-icon-container">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="2" y1="12" x2="22" y2="12"></line>
+                        <path
+                          d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z">
+                        </path>
+                      </svg>
+                    </div>
+                    <span class="setting-label">Language</span>
+                  </div>
+                  <div class="setting-right-side">
+                    <span class="setting-status-text">English</span>
+                    <svg class="chevron-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" stroke-width="2.5">
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                  </div>
+                </div>
+
+                <!-- Time Format -->
+                <div class="setting-row-card" onclick="showToast('Time Format: 12-Hour')">
+                  <div class="setting-left-side">
+                    <div class="setting-icon-container">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                      </svg>
+                    </div>
+                    <span class="setting-label">Time Format</span>
+                  </div>
+                  <div class="setting-right-side">
+                    <span class="setting-status-text">12-Hour</span>
+                    <svg class="chevron-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" stroke-width="2.5">
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Group B: Sensor Settings (Categorized) -->
+          <div class="settings-subgroup" data-group="sensor" style="display: none;">
+            <div class="settings-group">
+              <h3 class="settings-group-title">Thresholds & Calibration</h3>
+              <div class="settings-card-list">
+                <div class="setting-row-card">
+                  <div class="setting-left-side">
+                    <span class="setting-label">Max Temperature Limit</span>
+                  </div>
+                  <span class="setting-status-text">34.0°C</span>
+                </div>
+                <div class="setting-row-card">
+                  <div class="setting-left-side">
+                    <span class="setting-label">Optimal pH Range</span>
+                  </div>
+                  <span class="setting-status-text">6.5 - 7.5</span>
+                </div>
+                <div class="setting-row-card">
+                  <div class="setting-left-side">
+                    <span class="setting-label">Water Depth Safety Margin</span>
+                  </div>
+                  <span class="setting-status-text">20 - 30 cm</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Group C: Machine Settings -->
+          <div class="settings-subgroup" data-group="machine" style="display: none;">
+            <div class="settings-group">
+              <h3 class="settings-group-title">Actuator Hardware</h3>
+              <div class="settings-card-list">
+                <div class="setting-row-card">
+                  <div class="setting-left-side">
+                    <span class="setting-label">Submersible Water Pump</span>
+                  </div>
+                  <span class="setting-status-text" style="color: #2e7d32; font-weight:700;">AUTO (Low Trigger)</span>
+                </div>
+                <div class="setting-row-card">
+                  <div class="setting-left-side">
+                    <span class="setting-label">Retractable Canopy</span>
+                  </div>
+                  <span class="setting-status-text" style="color: #2e7d32; font-weight:700;">AUTO (Sun Sensor)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Big Green Save Button -->
+          <button id="save-settings-btn" class="settings-save-btn">Save</button>
+
+        </section>
+
+      </div>
+
+      <!-- ====================================================================
+             BOTTOM NAVIGATION BAR (3 Tabs: Dashboard, Status, Settings)
+             ==================================================================== -->
+      <nav class="bottom-nav-bar" aria-label="Main App Navigation">
+
+        <!-- Tab 1: Dashboard -->
+        <button class="nav-tab-btn active" data-tab="dashboard">
+          <div class="nav-icon-box">
+            <svg viewBox="0 0 28 28" fill="currentColor">
+              <path d="M14 3L3 12h3v11h6v-6h4v6h6V12h3L14 3z" />
+            </svg>
+          </div>
+          <span class="nav-label">Dashboard</span>
+        </button>
+
+        <div class="nav-divider"></div>
+
+        <!-- Tab 2: Status -->
+        <button class="nav-tab-btn" data-tab="status">
+          <div class="nav-icon-box">
+            <svg viewBox="0 0 28 28">
+              <!-- Floating Azolla Clover icon -->
+              <ellipse cx="14" cy="21" rx="11" ry="3.5" fill="#4db6ac" opacity="0.6" />
+              <path d="M14 15C11 10 10 6 14 4C18 6 17 10 14 15Z" fill="#2e7d32" />
+              <path d="M14 15C18 12 22 11 23 15C21 18 17 17 14 15Z" fill="#388e3c" />
+              <path d="M14 15C10 17 6 18 5 15C7 11 11 12 14 15Z" fill="#4caf50" />
+              <circle cx="14" cy="15" r="2" fill="#1b5e20" />
+            </svg>
+          </div>
+          <span class="nav-label">Status</span>
+        </button>
+
+        <div class="nav-divider"></div>
+
+        <!-- Tab 3: Settings -->
+        <button class="nav-tab-btn" data-tab="settings">
+          <div class="nav-icon-box">
+            <svg viewBox="0 0 28 28" fill="currentColor">
+              <path
+                d="M22.33 14.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L5.93 10.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM14 17.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+            </svg>
+          </div>
+          <span class="nav-label">Settings</span>
+        </button>
+
+      </nav>
+
+    </div>
+    </div>
+  </main>
+
+  <!-- ====================================================================
+       INTERACTIVE HARDWARE SIMULATION DRAWER
+       ==================================================================== -->
+  <aside id="simulator-panel" class="simulator-panel" aria-label="Hardware Simulator">
+    <div class="sim-header">
+      <div class="sim-title">
+        <span>🧪</span> IoT Sensor Telemetry Simulator
+      </div>
+      <button id="sim-close-btn" class="sim-close-btn">&times;</button>
+    </div>
+
+    <!-- Sliders -->
+    <div class="sim-control-row">
+      <div class="sim-label-group">
+        <span>Water Level:</span>
+        <span id="sim-water-val">26 cm</span>
+      </div>
+      <input id="sim-water" type="range" min="10" max="45" value="26" class="sim-slider">
+    </div>
+
+    <div class="sim-control-row">
+      <div class="sim-label-group">
+        <span>Water Temperature:</span>
+        <span id="sim-temp-val">36°C</span>
+      </div>
+      <input id="sim-temp" type="range" min="18" max="44" step="0.5" value="36" class="sim-slider">
+    </div>
+
+    <div class="sim-control-row">
+      <div class="sim-label-group">
+        <span>pH Level:</span>
+        <span id="sim-ph-val">7.2</span>
+      </div>
+      <input id="sim-ph" type="range" min="4.5" max="9.5" step="0.1" value="7.2" class="sim-slider">
+    </div>
+
+    <div class="sim-control-row">
+      <div class="sim-label-group">
+        <span>Pond Surface Coverage:</span>
+        <span id="sim-cov-val">75%</span>
+      </div>
+      <input id="sim-cov" type="range" min="20" max="100" value="75" class="sim-slider">
+    </div>
+
+    <!-- Quick Presets -->
+    <div class="sim-quick-actions">
+      <button class="sim-preset-btn" data-preset="optimal">Optimal Growth</button>
+      <button class="sim-preset-btn" data-preset="heatwave">Heatwave Stress</button>
+      <button class="sim-preset-btn" data-preset="acidic">Acidic Anomaly</button>
+      <button class="sim-preset-btn" data-preset="mockup">Reset Design</button>
+    </div>
+  </aside>
+
+  <!-- ====================================================================
+       MODALS: RECENT LOGS INSPECTOR & PROFILE
+       ==================================================================== -->
+  <div id="logs-modal" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title">System Event Audit Logs</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="logs-list">
+          <div class="log-item-card pump">
+            <div class="log-content">
+              <div class="log-primary-text">Pump turned on</div>
+              <div class="log-secondary-text">Water Level Low (20.5 cm threshold triggered)</div>
+            </div>
+            <div class="log-time-stamp">3:45 PM</div>
+          </div>
+          <div class="log-item-card browning">
+            <div class="log-content">
+              <div class="log-primary-text">Browning Detected</div>
+              <div class="log-secondary-text">Sector B & D affected by heat stress (>35°C)</div>
+            </div>
+            <div class="log-time-stamp">2:20 PM</div>
+          </div>
+          <div class="log-item-card canopy">
+            <div class="log-content">
+              <div class="log-primary-text">Canopy Deployed</div>
+              <div class="log-secondary-text">Sunlight Duration Met (Cumulative 6.2 hrs)</div>
+            </div>
+            <div class="log-time-stamp">1:00 PM</div>
+          </div>
+          <div class="log-item-card pump">
+            <div class="log-content">
+              <div class="log-primary-text">Aerator Cycle Completed</div>
+              <div class="log-secondary-text">Dissolved Oxygen reached 7.8 mg/L</div>
+            </div>
+            <div class="log-time-stamp">11:15 AM</div>
+          </div>
+          <div class="log-item-card canopy">
+            <div class="log-content">
+              <div class="log-primary-text">Morning Dew Check Passed</div>
+              <div class="log-secondary-text">All sensor nodes online & calibrated</div>
+            </div>
+            <div class="log-time-stamp">8:00 AM</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Profile Modal -->
+  <div id="profile-modal" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title">Farm Operator Profile</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="text-align: center; margin-bottom: 16px;">
+          <div
+            style="width: 70px; height: 70px; border-radius: 50%; background: #c8e6c9; margin: 0 auto 10px; display: flex; align-items: center; justify-content: center; font-size: 32px;">
+            👨‍🌾
+          </div>
+          <h4 style="font-size: 18px; color: var(--primary-dark);">Farm Manager</h4>
+          <p style="font-size: 13px; color: var(--text-muted);">Station #04 - EcoAzolla Pond 1</p>
+        </div>
+        <div class="settings-card-list">
+          <div class="setting-row-card">
+            <span class="setting-label">Pond Unit ID</span>
+            <span class="setting-status-text">AZ-POND-04</span>
+          </div>
+          <div class="setting-row-card">
+            <span class="setting-label">Firmware</span>
+            <span class="setting-status-text">v2.4.1-edge</span>
+          </div>
+          <div class="setting-row-card">
+            <span class="setting-label">Telemetry Status</span>
+            <span class="setting-status-text" style="color: #2e7d32; font-weight: 700;">Healthy</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Layer -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Application Scripts -->
+  <script src="js/simulation.js"></script>
+  <script src="js/app.js"></script>
+</body>
+
+</html>
