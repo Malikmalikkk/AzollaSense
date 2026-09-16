@@ -586,11 +586,25 @@ body::before {
   overflow: hidden;
 }
 
+.tank-image-wrapper:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: unset;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .tank-feed-card img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.tank-image-wrapper:fullscreen img {
+  object-fit: contain;
 }
 
 /* Feed Overlays */

@@ -1,0 +1,19 @@
+{
+  "name": "AzollaSense",
+  "short_name": "AzollaSense",
+  "description": "Intelligent environmental sensing, autonomous pond telemetry, and computer vision browning detection for precision Azolla cultivation.",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#e6f3e7",
+  "theme_color": "#194627",
+  "icons": [
+    {
+      "src": "assets/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
