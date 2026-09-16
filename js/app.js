@@ -135,11 +135,11 @@ document.addEventListener('DOMContentLoaded', () => {
     cvToggleBtn.addEventListener('click', () => {
       const isActive = cvOverlayLayer.classList.toggle('active');
       if (isActive) {
-        cvToggleBtn.innerHTML = `<span>👁️</span> AI Vision: ON`;
+        cvToggleBtn.innerHTML = `AI Vision: ON`;
         cvToggleBtn.style.background = '#2e7d32';
         cvToggleBtn.style.color = '#ffffff';
       } else {
-        cvToggleBtn.innerHTML = `<span>👁️</span> AI Vision`;
+        cvToggleBtn.innerHTML = `AI Vision: OFF`;
         cvToggleBtn.style.background = 'rgba(255,255,255,0.9)';
         cvToggleBtn.style.color = 'var(--primary-dark)';
       }
