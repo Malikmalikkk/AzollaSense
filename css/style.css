@@ -659,6 +659,30 @@ body::before {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
+.feed-fullscreen-btn {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--primary-dark);
+  border-radius: 8px;
+  border: 1px solid #bedec6;
+  cursor: pointer;
+  z-index: 3;
+  transition: var(--transition-fast);
+}
+
+.feed-fullscreen-btn:hover {
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transform: scale(1.05);
+}
+
 /* AI Computer Vision Overlays */
 .cv-overlay-layer {
   position: absolute;

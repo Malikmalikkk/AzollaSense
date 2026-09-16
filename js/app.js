@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // CV Browning Detection overlay
   const cvToggleBtn = document.getElementById('toggle-cv-overlay');
   const cvOverlayLayer = document.getElementById('cv-overlay-layer');
+  const fullscreenFeedBtn = document.getElementById('fullscreen-feed-btn');
 
   // Status Screen back button
   const statusBackBtn = document.getElementById('status-back-btn');
@@ -142,6 +143,23 @@ document.addEventListener('DOMContentLoaded', () => {
         cvToggleBtn.innerHTML = `AI Vision: OFF`;
         cvToggleBtn.style.background = 'rgba(255,255,255,0.9)';
         cvToggleBtn.style.color = 'var(--primary-dark)';
+      }
+    });
+  }
+
+  // 5. Fullscreen Feed Toggle
+  if (fullscreenFeedBtn) {
+    fullscreenFeedBtn.addEventListener('click', () => {
+      // Find the closest wrapper to make fullscreen
+      const wrapper = fullscreenFeedBtn.closest('.tank-image-wrapper');
+      if (!wrapper) return;
+      
+      if (!document.fullscreenElement) {
+        wrapper.requestFullscreen().catch(err => {
+          console.error(`Error attempting to enable fullscreen: ${err.message}`);
+        });
+      } else {
+        document.exitFullscreen();
       }
     });
   }
