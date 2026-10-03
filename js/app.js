@@ -27,12 +27,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (startStreamBtn && livePiFeed) {
     startStreamBtn.addEventListener("click", () => {
-      console.log("[STREAM] Starting camera stream...");
+      console.log("[STREAM] Starting camera...");
 
       streamRunning = true;
 
-      // Start MJPEG connection.
-      // This is the FIRST time /video_feed is requested.
+      // Request the stream ONLY after Play is clicked
       livePiFeed.src = "/video_feed?stream=" + Date.now();
 
       // Hide Play
@@ -40,7 +39,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Show Stop
       if (stopStreamBtn) {
-        stopStreamBtn.style.display = "inline-flex";
+        stopStreamBtn.style.display = "flex";
+        console.log("[STREAM] Stop button shown");
       }
 
       // Show LIVE badge
@@ -48,7 +48,7 @@ document.addEventListener("DOMContentLoaded", () => {
         feedLiveBadge.style.display = "inline-flex";
       }
 
-      // Show AI Vision button
+      // Show AI Vision toggle
       if (cvToggleBtn) {
         cvToggleBtn.style.display = "inline-flex";
       }
@@ -63,9 +63,38 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (stopStreamBtn) {
     stopStreamBtn.addEventListener("click", () => {
-      console.log("[STREAM] Stop button clicked.");
+      console.log("[STREAM] Stop button clicked");
 
-      stopCameraStream();
+      streamRunning = false;
+
+      // Tell Flask to release USB camera
+      fetch("/stop_stream", {
+        method: "POST",
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          console.log("[STREAM] Server response:", data);
+        })
+        .catch((error) => {
+          console.error("[STREAM] Stop request failed:", error);
+        });
+
+      // Remove MJPEG stream from browser
+      livePiFeed.src = "assets/tank.png";
+
+      // Reset UI
+      startStreamBtn.style.display = "flex";
+      stopStreamBtn.style.display = "none";
+
+      if (feedLiveBadge) {
+        feedLiveBadge.style.display = "none";
+      }
+
+      if (cvToggleBtn) {
+        cvToggleBtn.style.display = "none";
+      }
+
+      showToast("Camera stream stopped.");
     });
   }
 
