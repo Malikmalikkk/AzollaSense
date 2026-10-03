@@ -83,17 +83,19 @@
           <!-- Live Camera Feed (Concrete Tank with Azolla) -->
           <div class="tank-feed-card">
             <div class="tank-image-wrapper">
-              <!-- Replaced static image with live Raspberry Pi video feed -->
-              <img id="live-pi-feed" src="/video_feed" alt="Live Camera View of Azolla Cultivation Tank">
+              <!-- Placeholder image loads first instead of the video stream -->
+              <img id="live-pi-feed" src="assets/tank.png" alt="Live Camera View of Azolla Cultivation Tank">
 
-              <!-- Overlays -->
-              <div class="feed-live-badge">
+              <!-- Live Badge (Hidden until stream starts) -->
+              <div id="feed-live-badge" class="feed-live-badge" style="display: none;">
                 <span class="live-pulse-dot"></span>
                 <span>LIVE FEED</span>
               </div>
 
-              <button id="toggle-cv-overlay" class="feed-toggle-btn">
-                AI Vision: ON
+              <!-- Play Button Overlay -->
+              <button id="start-stream-btn" class="stream-play-btn" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 8px; background: rgba(25, 70, 39, 0.85); color: #fff; border: 2px solid #69f0ae; padding: 12px 24px; border-radius: 50px; font-weight: 700; cursor: pointer; z-index: 5; box-shadow: 0 8px 24px rgba(0,0,0,0.3); font-size: 16px; backdrop-filter: blur(4px); transition: 0.2s ease;">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                Start Live Stream
               </button>
 
               <button id="fullscreen-feed-btn" class="feed-fullscreen-btn" title="View Fullscreen">
@@ -101,31 +103,9 @@
                   <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
                 </svg>
               </button>
-
-              <!-- Computer Vision Bounding Boxes -->
-              <div id="cv-overlay-layer" class="cv-overlay-layer active">
-                <!-- Sector A: Healthy -->
-                <div class="cv-box healthy" style="top: 15%; left: 8%; width: 38%; height: 42%;">
-                  <span class="cv-tag">Sector A: Healthy (98%)</span>
-                </div>
-
-                <!-- Sector B: Browning Detected -->
-                <div class="cv-box anomaly" style="top: 18%; right: 10%; width: 40%; height: 44%;">
-                  <span class="cv-tag">Sector B: Browning 34% (Heat Stress)</span>
-                </div>
-
-                <!-- Sector C: Healthy -->
-                <div class="cv-box healthy" style="bottom: 12%; left: 10%; width: 36%; height: 32%;">
-                  <span class="cv-tag">Sector C: Healthy (95%)</span>
-                </div>
-
-                <!-- Sector D: Browning -->
-                <div class="cv-box anomaly" style="bottom: 10%; right: 14%; width: 34%; height: 30%;">
-                  <span class="cv-tag">Sector D: Browning 28%</span>
-                </div>
-              </div>
             </div>
           </div>
+          
 
           <!-- 2x2 Sensor Telemetry Grid -->
           <div class="telemetry-grid">
