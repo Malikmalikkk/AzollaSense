@@ -45,34 +45,34 @@ def generate_camera_stream():
         h, w, _ = frame.shape
         total_pixels = h * w
 
-        # Run YOLO inference
+        # 1. RUN YOLO INFERENCE
         result = model(frame, verbose=False)[0]
-        # Only draw masks if the UI toggle is ON
-        if ai_vision_enabled:
-            output_frame = result.plot(conf=True, labels=True)
+        
+        # 2. ALWAYS CALCULATE PERCENTAGES (Even if UI toggle is OFF)
+        green_pct, brown_pct = 0.0, 0.0
+        if result.masks is not None and result.boxes is not None:
+            masks_array = result.masks.data.cpu().numpy()
+            classes = result.boxes.cls.cpu().numpy()
 
-            # Calculate percentages (0: Brown, 1: Green)
-            green_pct, brown_pct = 0.0, 0.0
-            if result.masks is not None and result.boxes is not None:
-                masks_array = result.masks.data.cpu().numpy()
-                classes = result.boxes.cls.cpu().numpy()
+            if 0 in classes:
+                b_mask = np.any(masks_array[classes == 0], axis=0)
+                b_mask = cv2.resize(b_mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
+                brown_pct = (np.sum(b_mask) / total_pixels) * 100
 
-                if 0 in classes:
-                    b_mask = np.any(masks_array[classes == 0], axis=0)
-                    b_mask = cv2.resize(b_mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
-                    brown_pct = (np.sum(b_mask) / total_pixels) * 100
-
-                if 1 in classes:
-                    g_mask = np.any(masks_array[classes == 1], axis=0)
-                    g_mask = cv2.resize(g_mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
-                    green_pct = (np.sum(g_mask) / total_pixels) * 100
-
-        else:
-            output_frame = frame # Send raw photo
+            if 1 in classes:
+                g_mask = np.any(masks_array[classes == 1], axis=0)
+                g_mask = cv2.resize(g_mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
+                green_pct = (np.sum(g_mask) / total_pixels) * 100
 
         telemetry_data["green_cov"] = round(green_pct, 2)
         telemetry_data["brown_cov"] = round(brown_pct, 2)
         telemetry_data["total_cov"] = round(green_pct + brown_pct, 2)
+
+        # 3. ONLY DRAW MASKS IF THE UI TOGGLE IS ON
+        if ai_vision_enabled:
+            output_frame = result.plot(conf=True, labels=True)
+        else:
+            output_frame = frame # Send raw photo
 
         _, buffer = cv2.imencode('.jpg', output_frame)
         yield (b'--frame\r\n'
@@ -101,4 +101,4 @@ def video_feed():
 if __name__ == '__main__':
     threading.Thread(target=sensor_thread, daemon=True).start()
     # Host on localhost port 5000 (Cloudflare will route traffic here)
-    socketio.run(app, host='127.0.0.1', port=5000)
+    socketio.run(app, host='127.0.0.1', port=5000, allow_unsafe_werkzeug=True)
