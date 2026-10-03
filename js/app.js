@@ -134,46 +134,46 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-    // 4. Stream Play & AI Toggle Logic
+  // 4. Stream Play & AI Toggle Logic
   const startStreamBtn = document.getElementById('start-stream-btn');
   const livePiFeed = document.getElementById('live-pi-feed');
   const feedLiveBadge = document.getElementById('feed-live-badge');
   const cvToggleBtn = document.getElementById('toggle-cv-overlay'); // New Button
 
   if (startStreamBtn && livePiFeed) {
-  startStreamBtn.addEventListener('click', () => {
-    livePiFeed.src = "/video_feed";
-    startStreamBtn.style.display = 'none';
-    if (feedLiveBadge) feedLiveBadge.style.display = 'inline-flex';
-    
-    // Reveal the AI toggle button once stream starts
-    if (cvToggleBtn) cvToggleBtn.style.display = 'inline-flex';
-    
-    showToast('Connecting to farm camera...');
-  });
+    startStreamBtn.addEventListener('click', () => {
+      livePiFeed.src = "/video_feed";
+      startStreamBtn.style.display = 'none';
+      if (feedLiveBadge) feedLiveBadge.style.display = 'inline-flex';
+      
+      // Reveal the AI toggle button once stream starts
+      if (cvToggleBtn) cvToggleBtn.style.display = 'inline-flex';
+      
+      showToast('Connecting to farm camera...');
+    });
   }
 
   // Handle AI Toggle Clicks
   if (cvToggleBtn) {
-  let aiVisionState = true;
+    let aiVisionState = true;
 
-  cvToggleBtn.addEventListener('click', () => {
-    aiVisionState = !aiVisionState;
-    
-    // Send signal to Python backend
-    socket.emit('toggle_ai_vision', { enabled: aiVisionState });
-    
-    // Update UI button colors
-    if (aiVisionState) {
-      cvToggleBtn.innerHTML = `AI Vision: ON`;
-      cvToggleBtn.style.background = '#2e7d32';
-      cvToggleBtn.style.color = '#ffffff';
-    } else {
-      cvToggleBtn.innerHTML = `AI Vision: OFF`;
-      cvToggleBtn.style.background = 'rgba(255,255,255,0.9)';
-      cvToggleBtn.style.color = 'var(--primary-dark)';
-    }
-  });
+    cvToggleBtn.addEventListener('click', () => {
+      aiVisionState = !aiVisionState;
+      
+      // Send signal to Python backend
+      socket.emit('toggle_ai_vision', { enabled: aiVisionState });
+      
+      // Update UI button colors
+      if (aiVisionState) {
+        cvToggleBtn.innerHTML = `AI Vision: ON`;
+        cvToggleBtn.style.background = '#2e7d32';
+        cvToggleBtn.style.color = '#ffffff';
+      } else {
+        cvToggleBtn.innerHTML = `AI Vision: OFF`;
+        cvToggleBtn.style.background = 'rgba(255,255,255,0.9)';
+        cvToggleBtn.style.color = 'var(--primary-dark)';
+      }
+    });
   }
 
   // 5. Fullscreen Feed Toggle
