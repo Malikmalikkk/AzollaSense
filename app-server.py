@@ -24,6 +24,8 @@ telemetry_data = {
     "total_cov": 0.0
 }
 
+ai_vision_enabled = True
+
 def generate_camera_stream():
     # cv2.VideoCapture(0) selects the USB webcam on /dev/video0
     cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
@@ -67,14 +69,26 @@ def generate_camera_stream():
         telemetry_data["brown_cov"] = round(brown_pct, 2)
         telemetry_data["total_cov"] = round(green_pct + brown_pct, 2)
 
-        _, buffer = cv2.imencode('.jpg', annotated_frame)
+        # Only draw masks if the UI toggle is ON
+        if ai_vision_enabled:
+            output_frame = result.plot(conf=False, labels=False)
+        else:
+            output_frame = frame # Send raw photo
+
+        _, buffer = cv2.imencode('.jpg', output_frame)
         yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
 
 def sensor_thread():
     while True:
         socketio.emit('telemetry_update', telemetry_data)
         time.sleep(2)
+
+@socketio.on('toggle_ai_vision')
+def handle_toggle_vision(data):
+    global ai_vision_enabled
+    ai_vision_enabled = data.get('enabled', True)
+    print(f"AI Vision overlay set to: {ai_vision_enabled}")
 
 @app.route('/')
 def serve_index():
