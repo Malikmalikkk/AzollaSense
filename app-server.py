@@ -47,33 +47,32 @@ def generate_camera_stream():
 
         # Run YOLO inference
         result = model(frame, verbose=False)[0]
-        annotated_frame = result.plot(conf=False, labels=False)
+        # Only draw masks if the UI toggle is ON
+        if ai_vision_enabled:
+            output_frame = result.plot(conf=True, labels=True)
 
-        # Calculate percentages (0: Brown, 1: Green)
-        green_pct, brown_pct = 0.0, 0.0
-        if result.masks is not None and result.boxes is not None:
-            masks_array = result.masks.data.cpu().numpy()
-            classes = result.boxes.cls.cpu().numpy()
+            # Calculate percentages (0: Brown, 1: Green)
+            green_pct, brown_pct = 0.0, 0.0
+            if result.masks is not None and result.boxes is not None:
+                masks_array = result.masks.data.cpu().numpy()
+                classes = result.boxes.cls.cpu().numpy()
 
-            if 0 in classes:
-                b_mask = np.any(masks_array[classes == 0], axis=0)
-                b_mask = cv2.resize(b_mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
-                brown_pct = (np.sum(b_mask) / total_pixels) * 100
+                if 0 in classes:
+                    b_mask = np.any(masks_array[classes == 0], axis=0)
+                    b_mask = cv2.resize(b_mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
+                    brown_pct = (np.sum(b_mask) / total_pixels) * 100
 
-            if 1 in classes:
-                g_mask = np.any(masks_array[classes == 1], axis=0)
-                g_mask = cv2.resize(g_mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
-                green_pct = (np.sum(g_mask) / total_pixels) * 100
+                if 1 in classes:
+                    g_mask = np.any(masks_array[classes == 1], axis=0)
+                    g_mask = cv2.resize(g_mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
+                    green_pct = (np.sum(g_mask) / total_pixels) * 100
+
+        else:
+            output_frame = frame # Send raw photo
 
         telemetry_data["green_cov"] = round(green_pct, 2)
         telemetry_data["brown_cov"] = round(brown_pct, 2)
         telemetry_data["total_cov"] = round(green_pct + brown_pct, 2)
-
-        # Only draw masks if the UI toggle is ON
-        if ai_vision_enabled:
-            output_frame = result.plot(conf=False, labels=False)
-        else:
-            output_frame = frame # Send raw photo
 
         _, buffer = cv2.imencode('.jpg', output_frame)
         yield (b'--frame\r\n'
