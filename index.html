@@ -83,7 +83,8 @@
           <!-- Live Camera Feed (Concrete Tank with Azolla) -->
           <div class="tank-feed-card">
             <div class="tank-image-wrapper">
-              <img src="assets/tank.png" alt="Live Camera View of Azolla Cultivation Tank">
+              <!-- Replaced static image with live Raspberry Pi video feed -->
+              <img id="live-pi-feed" src="/video_feed" alt="Live Camera View of Azolla Cultivation Tank">
 
               <!-- Overlays -->
               <div class="feed-live-badge">
@@ -846,7 +847,8 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Application Scripts -->
-  <script src="js/simulation.js"></script>
+  <!-- Added Socket.IO CDN and removed the mock simulation.js -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script src="js/app.js"></script>
   <script>
     // Register Service Worker for PWA

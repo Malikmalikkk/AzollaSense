@@ -217,93 +217,62 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // 7. Connect Simulator Sliders & Presets to UI
-  const simWater = document.getElementById('sim-water');
-  const simTemp = document.getElementById('sim-temp');
-  const simPh = document.getElementById('sim-ph');
-  const simCov = document.getElementById('sim-cov');
+  // ====================================================================
+  // 7. LIVE RASPBERRY PI BACKEND CONNECTION (Socket.IO)
+  // ====================================================================
+  
+  // Since the Flask server serves this web app, io() automatically connects 
+  // to the current host (works locally and through Cloudflare Tunnel).
+  const socket = io();
 
-  if (simWater) {
-    simWater.addEventListener('input', (e) => {
-      document.getElementById('sim-water-val').textContent = `${e.target.value} cm`;
-      window.AzollaEngine.setWaterLevel(e.target.value);
-    });
-  }
-
-  if (simTemp) {
-    simTemp.addEventListener('input', (e) => {
-      document.getElementById('sim-temp-val').textContent = `${e.target.value}°C`;
-      window.AzollaEngine.setTemperature(e.target.value);
-    });
-  }
-
-  if (simPh) {
-    simPh.addEventListener('input', (e) => {
-      document.getElementById('sim-ph-val').textContent = e.target.value;
-      window.AzollaEngine.setPhLevel(e.target.value);
-    });
-  }
-
-  if (simCov) {
-    simCov.addEventListener('input', (e) => {
-      document.getElementById('sim-cov-val').textContent = `${e.target.value}%`;
-      window.AzollaEngine.setCoverage(e.target.value);
-    });
-  }
-
-  // Presets
-  document.querySelectorAll('.sim-preset-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const preset = btn.getAttribute('data-preset');
-      window.AzollaEngine.applyPreset(preset);
-      showToast(`Preset: ${preset.toUpperCase()} activated`);
-    });
+  socket.on('connect', () => {
+    console.log('Connected to Raspberry Pi 5 telemetry backend!');
+    showToast('✓ Connected to Live AzollaSense Stream');
   });
 
-  // 8. State Listener to Update All View Elements
-  window.AzollaEngine.subscribe((state) => {
-    // Water level
-    document.querySelectorAll('.val-water').forEach(el => el.textContent = `${state.waterLevel} cm`);
-    if (simWater) {
-      simWater.value = state.waterLevel;
-      const lbl = document.getElementById('sim-water-val');
-      if (lbl) lbl.textContent = `${state.waterLevel} cm`;
-    }
+  socket.on('disconnect', () => {
+    showToast('⚠ Connection to farm unit lost');
+  });
 
-    // Temperature
-    document.querySelectorAll('.val-temp').forEach(el => el.textContent = `${state.temperature}°C`);
-    if (simTemp) {
-      simTemp.value = state.temperature;
-      const lbl = document.getElementById('sim-temp-val');
-      if (lbl) lbl.textContent = `${state.temperature}°C`;
-    }
-
-    // pH Level
-    document.querySelectorAll('.val-ph').forEach(el => el.textContent = `${state.phLevel}`);
-    if (simPh) {
-      simPh.value = state.phLevel;
-      const lbl = document.getElementById('sim-ph-val');
-      if (lbl) lbl.textContent = `${state.phLevel}`;
-    }
-
-    // Pond Coverage
-    document.querySelectorAll('.val-cov').forEach(el => el.textContent = `${state.pondCoverage}%`);
-    if (simCov) {
-      simCov.value = state.pondCoverage;
-      const lbl = document.getElementById('sim-cov-val');
-      if (lbl) lbl.textContent = `${state.pondCoverage}%`;
-    }
-
-    // Browning sectors
-    document.querySelectorAll('.val-browning-sectors').forEach(el => {
-      el.textContent = `${state.browningSectors} Sectors Affected`;
+  // Listen for the live data payload from app_server.py
+  socket.on('telemetry_update', (data) => {
+    
+    // 1. Update Water Level
+    document.querySelectorAll('.val-water').forEach(el => {
+      el.textContent = `${data.water_level} cm`;
     });
 
-    // Update status badge if anomaly
+    // 2. Update Temperature
+    document.querySelectorAll('.val-temp').forEach(el => {
+      el.textContent = `${data.temperature}°C`;
+    });
+
+    // 3. Update pH Level
+    document.querySelectorAll('.val-ph').forEach(el => {
+      el.textContent = `${data.ph}`;
+    });
+
+    // 4. Update Pond Surface Coverage (Total % detected by YOLO)
+    document.querySelectorAll('.val-cov').forEach(el => {
+      el.textContent = `${data.total_cov}%`;
+    });
+
+    // 5. Update Browning Sector Warning text
+    document.querySelectorAll('.val-browning-sectors').forEach(el => {
+      if (data.brown_cov > 5.0) {
+        el.textContent = `Browning Detected: ${data.brown_cov}%`;
+        el.style.color = '#e65100'; // Orange warning color
+      } else {
+        el.textContent = `Healthy (${data.brown_cov}% browning)`;
+        el.style.color = '#2e7d32'; // Green healthy color
+      }
+    });
+
+    // 6. Update global status badge logic
     const statusBadge = document.querySelector('.system-status-badge span');
     if (statusBadge) {
-      if (state.temperature > 37 || state.phLevel < 6.0 || state.browningSectors >= 3) {
-        statusBadge.textContent = 'System Alert: Heat Stress';
+      if (data.temperature > 37.0 || data.ph < 6.0 || data.brown_cov > 10.0) {
+        statusBadge.textContent = 'System Alert: Action Required';
       } else {
         statusBadge.textContent = 'System Status';
       }
@@ -322,7 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const container = document.getElementById('toast-container');
     if (container) {
       container.appendChild(toast);
-      setTimeout(() => toast.remove(), 3000);
+      setTimeout(() => toast.remove(), 3500);
     }
   }
 
