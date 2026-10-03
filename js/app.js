@@ -9,46 +9,156 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const socket = io();
 
+  // ================================================================
+  // LIVE CAMERA STREAM CONTROL
+  // ================================================================
+
   const startStreamBtn = document.getElementById("start-stream-btn");
+  const stopStreamBtn = document.getElementById("stop-stream-btn");
   const livePiFeed = document.getElementById("live-pi-feed");
   const feedLiveBadge = document.getElementById("feed-live-badge");
   const cvToggleBtn = document.getElementById("toggle-cv-overlay");
 
-  let aiVisionState = true;
+  let streamRunning = false;
 
-  socket.on("connect", () => {
-    console.log("Connected to Raspberry Pi 5 telemetry backend!");
-    showToast("✓ Connected to Live AzollaSense Stream");
-  });
-
-  socket.on("disconnect", () => {
-    showToast("⚠ Connection to farm unit lost");
-  });
-
-  // ---------------------------------------------------------------
+  // ================================================================
   // START STREAM
-  // ---------------------------------------------------------------
+  // ================================================================
+
   if (startStreamBtn && livePiFeed) {
     startStreamBtn.addEventListener("click", () => {
-      // Start MJPEG stream
+      console.log("[STREAM] Starting camera stream...");
+
+      streamRunning = true;
+
+      // Start MJPEG connection.
+      // This is the FIRST time /video_feed is requested.
       livePiFeed.src = "/video_feed?stream=" + Date.now();
 
+      // Hide Play
       startStreamBtn.style.display = "none";
 
+      // Show Stop
+      if (stopStreamBtn) {
+        stopStreamBtn.style.display = "inline-flex";
+      }
+
+      // Show LIVE badge
       if (feedLiveBadge) {
         feedLiveBadge.style.display = "inline-flex";
       }
 
+      // Show AI Vision button
       if (cvToggleBtn) {
         cvToggleBtn.style.display = "inline-flex";
       }
 
-      // Make sure backend starts in ON state
-      aiVisionState = true;
-
       showToast("Connecting to farm camera...");
     });
   }
+
+  // ================================================================
+  // STOP STREAM
+  // ================================================================
+
+  if (stopStreamBtn) {
+    stopStreamBtn.addEventListener("click", () => {
+      console.log("[STREAM] Stop button clicked.");
+
+      stopCameraStream();
+    });
+  }
+
+  // ================================================================
+  // STOP CAMERA STREAM FUNCTION
+  // ================================================================
+
+  function stopCameraStream() {
+    if (!streamRunning) {
+      return;
+    }
+
+    console.log("[STREAM] Stopping camera stream...");
+
+    streamRunning = false;
+
+    // --------------------------------------------------------------
+    // FIRST: Tell Flask to release the USB camera
+    // --------------------------------------------------------------
+
+    fetch("/stop_stream", {
+      method: "POST",
+      keepalive: true,
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        console.log("[STREAM] Backend stop response:", data);
+      })
+      .catch((error) => {
+        console.warn("[STREAM] Could not contact stop endpoint:", error);
+      });
+
+    // --------------------------------------------------------------
+    // SECOND: Disconnect the browser MJPEG stream
+    // --------------------------------------------------------------
+
+    if (livePiFeed) {
+      livePiFeed.src = "assets/tank.png";
+    }
+
+    // --------------------------------------------------------------
+    // RESET UI
+    // --------------------------------------------------------------
+
+    if (startStreamBtn) {
+      startStreamBtn.style.display = "flex";
+    }
+
+    if (stopStreamBtn) {
+      stopStreamBtn.style.display = "none";
+    }
+
+    if (feedLiveBadge) {
+      feedLiveBadge.style.display = "none";
+    }
+
+    if (cvToggleBtn) {
+      cvToggleBtn.style.display = "none";
+
+      // Reset AI Vision state
+      cvToggleBtn.textContent = "AI Vision: ON";
+      cvToggleBtn.style.background = "#2e7d32";
+      cvToggleBtn.style.color = "#ffffff";
+    }
+
+    showToast("Camera stream stopped.");
+  }
+
+  // ================================================================
+  // STOP STREAM WHEN PAGE IS RELOADED / CLOSED
+  // ================================================================
+
+  window.addEventListener("beforeunload", () => {
+    if (!streamRunning) {
+      return;
+    }
+
+    console.log("[STREAM] Page unloading - releasing camera.");
+
+    // Tell Flask to release the USB camera.
+    //
+    // sendBeacon is specifically useful here because normal
+    // fetch() requests can be cancelled when the page unloads.
+
+    const data = new Blob([], { type: "application/json" });
+
+    navigator.sendBeacon("/stop_stream", data);
+
+    // Disconnect browser-side MJPEG request
+    if (livePiFeed) {
+      livePiFeed.src = "";
+    }
+  });
 
   // ================================================================
   // AI VISION TOGGLE
