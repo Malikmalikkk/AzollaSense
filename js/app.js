@@ -17,7 +17,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const brandLogoHome = document.getElementById("brand-logo-home");
 
   // CV Browning Detection overlay
-  const cvToggleBtn = document.getElementById("toggle-cv-overlay");
   const cvOverlayLayer = document.getElementById("cv-overlay-layer");
   const fullscreenFeedBtn = document.getElementById("fullscreen-feed-btn");
 
