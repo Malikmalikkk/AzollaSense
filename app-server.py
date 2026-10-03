@@ -37,8 +37,9 @@ def generate_camera_stream():
         return
 
     while True:
-        success, frame = cap.read()
-        if not success:
+        ok, frame = cap.read()
+
+        if not ok:
             time.sleep(0.01)
             continue
 
@@ -46,7 +47,8 @@ def generate_camera_stream():
         total_pixels = h * w
 
         # 1. RUN YOLO INFERENCE
-        result = model(frame, verbose=False)[0]
+        results = model(frame, verbose=False)
+        result = results[0]
         
         # 2. ALWAYS CALCULATE PERCENTAGES (Even if UI toggle is OFF)
         green_pct, brown_pct = 0.0, 0.0
@@ -68,15 +70,27 @@ def generate_camera_stream():
         telemetry_data["brown_cov"] = round(brown_pct, 2)
         telemetry_data["total_cov"] = round(green_pct + brown_pct, 2)
 
-        # 3. ONLY DRAW MASKS IF THE UI TOGGLE IS ON
+        # ================================================================
+        # DRAW YOLO VISUALIZATION ONLY WHEN AI VISION IS ENABLED
+        # ================================================================
         if ai_vision_enabled:
-            output_frame = result.plot(conf=True, labels=True)
+            output_frame = result.plot(
+                conf=False,
+                labels=True,
+                boxes=False,
+                masks=True
+            )
         else:
-            output_frame = frame # Send raw photo
+            # Completely raw camera frame
+            output_frame = frame.copy()
 
-        _, buffer = cv2.imencode('.jpg', output_frame)
+        ok, encoded = cv2.imencode('.jpg', output_frame,[cv2.IMWRITE_JPEG_QUALITY, 85])
+
+        if not ok:
+            continue
+        
         yield (b'--frame\r\n'
-            b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            b'Content-Type: image/jpeg\r\n\r\n' + encoded.tobytes() + b'\r\n')
 
 def sensor_thread():
     while True:
@@ -86,8 +100,20 @@ def sensor_thread():
 @socketio.on('toggle_ai_vision')
 def handle_toggle_vision(data):
     global ai_vision_enabled
-    ai_vision_enabled = data.get('enabled', True)
-    print(f"AI Vision overlay set to: {ai_vision_enabled}")
+
+    enabled = bool(data.get('enabled', True))
+
+    ai_vision_enabled = enabled
+
+    print(
+        f"[AI VISION] Overlay set to: "
+        f"{'ON' if ai_vision_enabled else 'OFF'}"
+    )
+
+    return {
+        "success": True,
+        "enabled": ai_vision_enabled
+    }
 
 @app.route('/')
 def serve_index():
@@ -95,8 +121,16 @@ def serve_index():
 
 @app.route('/video_feed')
 def video_feed():
-    return Response(generate_camera_stream(),
-                    mimetype='multipart/x-mixed-replace; boundary=frame')
+    response = Response(
+        generate_camera_stream(),
+        mimetype='multipart/x-mixed-replace; boundary=frame'
+    )
+
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+
+    return response
 
 if __name__ == '__main__':
     threading.Thread(target=sensor_thread, daemon=True).start()

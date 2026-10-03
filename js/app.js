@@ -3,6 +3,98 @@
  */
 
 document.addEventListener("DOMContentLoaded", () => {
+  // ================================================================
+  // LIVE STREAM + AI VISION TOGGLE
+  // ================================================================
+
+  const socket = io();
+
+  const startStreamBtn = document.getElementById("start-stream-btn");
+  const livePiFeed = document.getElementById("live-pi-feed");
+  const feedLiveBadge = document.getElementById("feed-live-badge");
+  const cvToggleBtn = document.getElementById("toggle-cv-overlay");
+
+  let aiVisionState = true;
+
+  socket.on("connect", () => {
+    console.log("Connected to Raspberry Pi 5 telemetry backend!");
+    showToast("✓ Connected to Live AzollaSense Stream");
+  });
+
+  socket.on("disconnect", () => {
+    showToast("⚠ Connection to farm unit lost");
+  });
+
+  // ---------------------------------------------------------------
+  // START STREAM
+  // ---------------------------------------------------------------
+  if (startStreamBtn && livePiFeed) {
+    startStreamBtn.addEventListener("click", () => {
+      // Start MJPEG stream
+      livePiFeed.src = "/video_feed?stream=" + Date.now();
+
+      startStreamBtn.style.display = "none";
+
+      if (feedLiveBadge) {
+        feedLiveBadge.style.display = "inline-flex";
+      }
+
+      if (cvToggleBtn) {
+        cvToggleBtn.style.display = "inline-flex";
+      }
+
+      // Make sure backend starts in ON state
+      aiVisionState = true;
+
+      showToast("Connecting to farm camera...");
+    });
+  }
+
+  // ================================================================
+  // AI VISION TOGGLE
+  // ================================================================
+
+  if (cvToggleBtn) {
+    cvToggleBtn.addEventListener("click", () => {
+      // Toggle local state
+      aiVisionState = !aiVisionState;
+
+      console.log("[AI VISION] Sending state:", aiVisionState);
+
+      // Send state to Flask
+      socket.emit(
+        "toggle_ai_vision",
+        {
+          enabled: aiVisionState,
+        },
+        (response) => {
+          console.log("[AI VISION] Backend response:", response);
+
+          // Backend did not acknowledge
+          if (!response || !response.success) {
+            console.error("[AI VISION] Backend failed to change state");
+
+            // Revert local state
+            aiVisionState = !aiVisionState;
+
+            return;
+          }
+
+          // Backend confirmed the state
+          if (response.enabled) {
+            cvToggleBtn.textContent = "AI Vision: ON";
+            cvToggleBtn.style.background = "#2e7d32";
+            cvToggleBtn.style.color = "#ffffff";
+          } else {
+            cvToggleBtn.textContent = "AI Vision: OFF";
+            cvToggleBtn.style.background = "rgba(255,255,255,0.9)";
+            cvToggleBtn.style.color = "var(--primary-dark)";
+          }
+        },
+      );
+    });
+  }
+
   // Elements
   const tabButtons = document.querySelectorAll(".nav-tab-btn");
   const tabPanels = document.querySelectorAll(".tab-panel");
@@ -134,47 +226,16 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // 4. Stream Play & AI Toggle Logic
-  const startStreamBtn = document.getElementById('start-stream-btn');
-  const livePiFeed = document.getElementById('live-pi-feed');
-  const feedLiveBadge = document.getElementById('feed-live-badge');
-  const cvToggleBtn = document.getElementById('toggle-cv-overlay'); // New Button
+  // Socket connection status
+  socket.on("connect", () => {
+    console.log("Socket.IO connected:", socket.id);
+    showToast("✓ Connected to Live AzollaSense Stream");
+  });
 
-  if (startStreamBtn && livePiFeed) {
-    startStreamBtn.addEventListener('click', () => {
-      livePiFeed.src = "/video_feed";
-      startStreamBtn.style.display = 'none';
-      if (feedLiveBadge) feedLiveBadge.style.display = 'inline-flex';
-      
-      // Reveal the AI toggle button once stream starts
-      if (cvToggleBtn) cvToggleBtn.style.display = 'inline-flex';
-      
-      showToast('Connecting to farm camera...');
-    });
-  }
-
-  // Handle AI Toggle Clicks
-  if (cvToggleBtn) {
-    let aiVisionState = true;
-
-    cvToggleBtn.addEventListener('click', () => {
-      aiVisionState = !aiVisionState;
-      
-      // Send signal to Python backend
-      socket.emit('toggle_ai_vision', { enabled: aiVisionState });
-      
-      // Update UI button colors
-      if (aiVisionState) {
-        cvToggleBtn.innerHTML = `AI Vision: ON`;
-        cvToggleBtn.style.background = '#2e7d32';
-        cvToggleBtn.style.color = '#ffffff';
-      } else {
-        cvToggleBtn.innerHTML = `AI Vision: OFF`;
-        cvToggleBtn.style.background = 'rgba(255,255,255,0.9)';
-        cvToggleBtn.style.color = 'var(--primary-dark)';
-      }
-    });
-  }
+  socket.on("disconnect", () => {
+    console.warn("Socket.IO disconnected");
+    showToast("⚠ Connection to farm unit lost");
+  });
 
   // 5. Fullscreen Feed Toggle
   if (fullscreenFeedBtn) {
@@ -256,19 +317,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // ====================================================================
   // 7. LIVE RASPBERRY PI BACKEND CONNECTION (Socket.IO)
   // ====================================================================
-
-  // Since the Flask server serves this web app, io() automatically connects
-  // to the current host (works locally and through Cloudflare Tunnel).
-  const socket = io();
-
-  socket.on("connect", () => {
-    console.log("Connected to Raspberry Pi 5 telemetry backend!");
-    showToast("✓ Connected to Live AzollaSense Stream");
-  });
-
-  socket.on("disconnect", () => {
-    showToast("⚠ Connection to farm unit lost");
-  });
 
   // Listen for the live data payload from app_server.py
   socket.on("telemetry_update", (data) => {
