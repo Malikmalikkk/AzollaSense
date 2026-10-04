@@ -571,6 +571,7 @@ body::before {
 .tank-feed-card {
   position: relative;
   width: 100%;
+  aspect-ratio: 1 / 1;
   background: #192a1f;
   border-radius: 18px;
   border: 2px solid rgba(120, 167, 134, 0.7);
@@ -580,9 +581,8 @@ body::before {
 }
 
 .tank-image-wrapper {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1 / 1;
+  position: absolute;
+  inset: 0;
   background: #737873;
   overflow: hidden;
 }
