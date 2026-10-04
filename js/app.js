@@ -194,6 +194,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // ================================================================
 
   if (cvToggleBtn) {
+    let aiVisionState = true; // Default state is ON
+
     cvToggleBtn.addEventListener("click", () => {
       // Toggle local state
       aiVisionState = !aiVisionState;
