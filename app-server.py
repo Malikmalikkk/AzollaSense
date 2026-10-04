@@ -163,7 +163,7 @@ def generate_camera_stream():
             output_frame = frame
 
             if model is not None:
-                result = model(frame, verbose=False)[0]
+                result = model(frame, verbose=False, conf=0.95)[0]
 
                 if result.masks is not None and result.boxes is not None:
                     masks_array = result.masks.data.cpu().numpy()
@@ -174,7 +174,7 @@ def generate_camera_stream():
                     green_pct = compute_coverage(masks_array, classes, 1, height, width, total_pixels)
 
                 if ai_enabled:
-                    output_frame = result.plot(conf=True, labels=True, boxes=True, masks=True)
+                    output_frame = result.plot(conf=False, labels=False, boxes=False, masks=True)
 
             # Broadcast telemetry at a fixed cadence while streaming
             now = time.time()
