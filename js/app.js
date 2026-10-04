@@ -20,6 +20,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const cvToggleBtn = document.getElementById("toggle-cv-overlay");
 
   let streamRunning = false;
+  let aiVisionState = true;
 
   // ================================================================
   // START STREAM
@@ -194,45 +195,24 @@ document.addEventListener("DOMContentLoaded", () => {
   // ================================================================
 
   if (cvToggleBtn) {
-    let aiVisionState = true; // Default state is ON
-
     cvToggleBtn.addEventListener("click", () => {
-      // Toggle local state
       aiVisionState = !aiVisionState;
 
-      console.log("[AI VISION] Sending state:", aiVisionState);
+      console.log(`[AI VISION] ${aiVisionState ? "ON" : "OFF"}`);
 
-      // Send state to Flask
-      socket.emit(
-        "toggle_ai_vision",
-        {
-          enabled: aiVisionState,
-        },
-        (response) => {
-          console.log("[AI VISION] Backend response:", response);
+      socket.emit("toggle_ai_vision", {
+        enabled: aiVisionState,
+      });
 
-          // Backend did not acknowledge
-          if (!response || !response.success) {
-            console.error("[AI VISION] Backend failed to change state");
-
-            // Revert local state
-            aiVisionState = !aiVisionState;
-
-            return;
-          }
-
-          // Backend confirmed the state
-          if (response.enabled) {
-            cvToggleBtn.textContent = "AI Vision: ON";
-            cvToggleBtn.style.background = "#2e7d32";
-            cvToggleBtn.style.color = "#ffffff";
-          } else {
-            cvToggleBtn.textContent = "AI Vision: OFF";
-            cvToggleBtn.style.background = "rgba(255,255,255,0.9)";
-            cvToggleBtn.style.color = "var(--primary-dark)";
-          }
-        },
-      );
+      if (aiVisionState) {
+        cvToggleBtn.textContent = "AI Vision: ON";
+        cvToggleBtn.style.background = "#2e7d32";
+        cvToggleBtn.style.color = "#ffffff";
+      } else {
+        cvToggleBtn.textContent = "AI Vision: OFF";
+        cvToggleBtn.style.background = "rgba(255,255,255,0.9)";
+        cvToggleBtn.style.color = "var(--primary-dark)";
+      }
     });
   }
 
