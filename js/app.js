@@ -2,7 +2,7 @@
  * AzollaSense — Main Application Logic
  *
  * Dashboard telemetry, live camera stream control, AI vision toggle,
- * tab navigation, settings, modal dialogs and the IoT simulator drawer.
+ * tab navigation, settings and modal dialogs.
  * All telemetry is server-driven: every value on screen originates from
  * the "telemetry_update" Socket.IO broadcast sent by app-server.py.
  */
@@ -185,97 +185,6 @@
 
 
   /* ------------------------------------------------------------------ */
-  /* IoT Simulator drawer                                               */
-  /* ------------------------------------------------------------------ */
-
-  const simToggleBtn = byId("toggle-sim-btn");
-  const simPanel = byId("simulator-panel");
-  const simCloseBtn = byId("sim-close-btn");
-
-  function setSimulatorOpen(open) {
-    if (simPanel) simPanel.classList.toggle("open", open);
-    if (simToggleBtn) simToggleBtn.classList.toggle("active", open);
-  }
-
-  if (simToggleBtn && simPanel) {
-    simToggleBtn.addEventListener("click", () => setSimulatorOpen(!simPanel.classList.contains("open")));
-  }
-  if (simCloseBtn) {
-    simCloseBtn.addEventListener("click", () => setSimulatorOpen(false));
-  }
-
-  // Slider input id -> telemetry field emitted to the server
-  const SIM_SLIDERS = {
-    "sim-water": { field: "water_level", unit: " cm", decimals: 0 },
-    "sim-temp": { field: "temperature", unit: "°C", decimals: 1 },
-    "sim-ph": { field: "ph", unit: "", decimals: 1 },
-    "sim-cov": { field: "coverage", unit: "%", decimals: 0 },
-  };
-
-  const simControls = {};
-
-  Object.entries(SIM_SLIDERS).forEach(([inputId, cfg]) => {
-    const input = byId(inputId);
-    const valueLabel = byId(`${inputId}-val`);
-    if (!input || !valueLabel) return;
-
-    simControls[cfg.field] = { input, valueLabel, ...cfg };
-
-    input.addEventListener("input", () => {
-      const value = Number.parseFloat(input.value);
-      valueLabel.textContent = `${value.toFixed(cfg.decimals)}${cfg.unit}`;
-      scheduleSimEmit();
-    });
-  });
-
-  // Throttle slider emissions so rapid drags don't flood the socket
-  let simEmitTimer = null;
-  function scheduleSimEmit() {
-    if (simEmitTimer) return;
-    simEmitTimer = setTimeout(() => {
-      simEmitTimer = null;
-      const payload = {};
-      Object.entries(simControls).forEach(([field, control]) => {
-        payload[field] = Number.parseFloat(control.input.value);
-      });
-      socket.emit("sim_update", payload);
-    }, 120);
-  }
-
-  function applySimulatorValues(values) {
-    Object.entries(simControls).forEach(([field, control]) => {
-      if (values[field] === undefined) return;
-      const clamped = Math.min(
-        Number(control.input.max),
-        Math.max(Number(control.input.min), Number(values[field]))
-      );
-      control.input.value = clamped;
-      control.valueLabel.textContent = `${Number(clamped).toFixed(control.decimals)}${control.unit}`;
-    });
-  }
-
-  // Presets mirror SIM_PRESETS in app-server.py
-  const SIM_PRESETS = {
-    optimal: { water_level: 26, temperature: 28, ph: 7.0, coverage: 85 },
-    heatwave: { water_level: 22, temperature: 38.5, ph: 7.8, coverage: 60 },
-    acidic: { water_level: 26, temperature: 31, ph: 5.4, coverage: 55 },
-    mockup: { water_level: 26, temperature: 36, ph: 7.2, coverage: 75 },
-  };
-
-  qsa(".sim-preset-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const values = SIM_PRESETS[btn.dataset.preset];
-      if (!values) return;
-
-      // Instant local feedback; the server broadcast reconciles every client
-      applySimulatorValues(values);
-      socket.emit("sim_preset", { preset: btn.dataset.preset });
-      showToast(`Preset applied: ${btn.textContent.trim()}`);
-    });
-  });
-
-
-  /* ------------------------------------------------------------------ */
   /* Socket.IO — connection state & live telemetry                      */
   /* ------------------------------------------------------------------ */
 
@@ -319,13 +228,6 @@
           : "System Status";
     }
 
-    // Keep the simulator drawer in sync with server-driven values
-    applySimulatorValues({
-      water_level: data.water_level,
-      temperature: data.temperature,
-      ph: data.ph,
-      coverage: data.total_cov,
-    });
   });
 
 

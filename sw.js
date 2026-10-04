@@ -12,7 +12,6 @@ const CORE_ASSETS = [
   "/index.html",
   "/css/style.css",
   "/js/app.js",
-  "/js/simulation.js",
   "/manifest.json",
   "/assets/logo.png",
   "/assets/tank.png",

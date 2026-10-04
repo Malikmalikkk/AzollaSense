@@ -2,10 +2,7 @@
 AzollaSense — Flask + Socket.IO backend
 
 Serves the web app, streams the USB camera as MJPEG, runs YOLO
-segmentation for browning detection and relays telemetry to every
-connected client. The IoT simulator drawer in the UI can drive the
-shared telemetry state so the dashboard can be demoed without
-physical sensors attached.
+segmentation for browning detection and relays telemetry to every connected client.
 """
 
 import os
@@ -229,65 +226,6 @@ def handle_toggle_vision(data):
         state["ai_vision_enabled"] = enabled
     print(f"[AI VISION] Overlay set to: {'ON' if enabled else 'OFF'}")
     return {"success": True, "enabled": enabled}
-
-
-# Slider field -> telemetry field + sane clamping range
-SIM_FIELDS = {
-    "water_level": ("water_level", 10.0, 45.0),
-    "temperature": ("temperature", 18.0, 44.0),
-    "ph": ("ph", 4.5, 9.5),
-    "coverage": ("total_cov", 0.0, 100.0),
-}
-
-
-@socketio.on("sim_update")
-def handle_sim_update(data):
-    """Apply simulator slider values to the shared telemetry state."""
-    if not isinstance(data, dict):
-        return {"success": False, "error": "invalid payload"}
-
-    applied = {}
-    with state_lock:
-        for field, (target, low, high) in SIM_FIELDS.items():
-            if field not in data:
-                continue
-            try:
-                value = float(data[field])
-            except (TypeError, ValueError):
-                continue
-            value = min(high, max(low, value))
-            state["telemetry"][target] = round(value, 2)
-            applied[target] = state["telemetry"][target]
-        payload = dict(state["telemetry"])
-
-    socketio.emit("telemetry_update", payload)
-    return {"success": True, "applied": applied}
-
-
-# Presets mirror the IoT simulator drawer in the UI
-SIM_PRESETS = {
-    "optimal": {"water_level": 26.0, "temperature": 28.0, "ph": 7.0, "green_cov": 84.0, "brown_cov": 1.0, "total_cov": 85.0},
-    "heatwave": {"water_level": 22.0, "temperature": 38.5, "ph": 7.8, "green_cov": 38.0, "brown_cov": 22.0, "total_cov": 60.0},
-    "acidic": {"water_level": 26.0, "temperature": 31.0, "ph": 5.4, "green_cov": 47.0, "brown_cov": 8.0, "total_cov": 55.0},
-    "mockup": {"water_level": 26.0, "temperature": 36.0, "ph": 7.2, "green_cov": 75.0, "brown_cov": 0.0, "total_cov": 75.0},
-}
-
-
-@socketio.on("sim_preset")
-def handle_sim_preset(data):
-    """Apply a named telemetry preset (Optimal / Heatwave / Acidic / Reset)."""
-    preset = (data or {}).get("preset")
-    if preset not in SIM_PRESETS:
-        return {"success": False, "error": "unknown preset"}
-
-    with state_lock:
-        state["telemetry"].update(SIM_PRESETS[preset])
-        payload = dict(state["telemetry"])
-
-    socketio.emit("telemetry_update", payload)
-    print(f"[SIMULATOR] Preset applied: {preset}")
-    return {"success": True, "preset": preset}
-
 
 
 # ---------------------------------------------------------------------------

@@ -142,33 +142,6 @@ body::before {
   object-fit: contain;
 }
 
-.tool-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: #f0f7f2;
-  border: 1px solid #c9e3d0;
-  padding: 6px 12px;
-  border-radius: var(--radius-full);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--primary-forest);
-  cursor: pointer;
-  transition: var(--transition-fast);
-}
-
-.tool-btn:hover {
-  background: #e2f2e5;
-  border-color: var(--primary-leaf);
-  transform: translateY(-1px);
-}
-
-.tool-btn.active {
-  background: var(--primary-forest);
-  color: #fff;
-  border-color: var(--primary-dark);
-}
-
 /* Device Wrapper & Outer Layout */
 .app-viewport {
   position: relative;
@@ -1238,101 +1211,6 @@ input:checked+.slider-knob::before {
   width: 1px;
   height: 30px;
   background: rgba(144, 203, 161, 0.4);
-}
-
-/* ==========================================================================
-   IoT Simulation Drawer & Modal Dialogs
-   ========================================================================== */
-.simulator-panel {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  width: 340px;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(18px);
-  border-radius: 20px;
-  border: 1px solid rgba(93, 163, 114, 0.4);
-  box-shadow: 0 16px 40px rgba(18, 50, 27, 0.2);
-  padding: 16px 18px;
-  z-index: 1050;
-  transform: translateY(120%);
-  opacity: 0;
-  transition: var(--transition-normal);
-  pointer-events: none;
-}
-
-.simulator-panel.open {
-  transform: translateY(0);
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.sim-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #e1efe4;
-}
-
-.sim-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 15px;
-  font-weight: 800;
-  color: var(--primary-forest);
-}
-
-.sim-close-btn {
-  background: transparent;
-  border: none;
-  font-size: 20px;
-  cursor: pointer;
-  color: var(--text-muted);
-}
-
-.sim-control-row {
-  margin-bottom: 12px;
-}
-
-.sim-label-group {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-secondary);
-  margin-bottom: 4px;
-}
-
-.sim-slider {
-  width: 100%;
-  accent-color: var(--primary-emerald);
-  cursor: pointer;
-}
-
-.sim-quick-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.sim-preset-btn {
-  flex: 1;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 6px 4px;
-  border-radius: 8px;
-  border: 1px solid #c9e3d0;
-  background: #f4faf5;
-  color: var(--primary-forest);
-  cursor: pointer;
-  transition: var(--transition-fast);
-}
-
-.sim-preset-btn:hover {
-  background: #e2f3e6;
 }
 
 /* Toast Notifications */
