@@ -6,9 +6,12 @@ segmentation for browning detection and relays telemetry to every connected clie
 """
 
 import os
+import json
 import signal
 import threading
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import cv2
 import numpy as np
@@ -25,6 +28,9 @@ FRAME_SIZE = 640
 MAX_FPS = 15
 # How often telemetry is broadcast while the camera stream is running
 STREAM_TELEMETRY_INTERVAL = 0.5
+PH_TIMEZONE = ZoneInfo("Asia/Manila")
+CAPTURE_DIR = os.path.join(BASE_DIR, "assets", "captures")
+LATEST_CAPTURE_PATH = os.path.join(CAPTURE_DIR, "latest.json")
 
 app = Flask(__name__, static_url_path="", static_folder=BASE_DIR)
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -48,6 +54,7 @@ state = {
     "camera": None,
     "model": None,
     "model_status": "not loaded",
+    "last_capture_date": None,
 }
 
 
@@ -120,6 +127,91 @@ def compute_coverage(masks_array, classes, target_class, height, width, total_pi
     mask = np.any(masks_array[classes == target_class], axis=0).astype(np.uint8)
     mask = cv2.resize(mask, (width, height), interpolation=cv2.INTER_NEAREST)
     return float(np.sum(mask) / total_pixels * 100.0)
+
+
+def run_daily_capture(force=False):
+    """Capture and analyze a frame; force bypasses the daily schedule guard."""
+    now = datetime.now(PH_TIMEZONE)
+    today = now.date().isoformat()
+    try:
+        with open(LATEST_CAPTURE_PATH, "r", encoding="utf-8") as record_file:
+            latest = json.load(record_file)
+        if not force and latest.get("captured_at", "").startswith(today):
+            with state_lock:
+                state["last_capture_date"] = today
+            return False
+    except (OSError, json.JSONDecodeError):
+        pass
+    with state_lock:
+        if (not force and state["last_capture_date"] == today) or state["stream_active"]:
+            return False
+
+    camera = open_camera()
+    if camera is None:
+        print("[CAPTURE] Could not open camera for scheduled capture.")
+        return False
+    try:
+        # Allow auto exposure/focus to settle before using the frame.
+        time.sleep(0.5)
+        success, frame = camera.read()
+    finally:
+        camera.release()
+    if not success:
+        print("[CAPTURE] Camera did not return a frame.")
+        return False
+
+    frame = center_crop_square(frame)
+    height, width = frame.shape[:2]
+    with state_lock:
+        model = state["model"]
+        telemetry = dict(state["telemetry"])
+    brown_pct = green_pct = 0.0
+    output = frame
+    if model is not None:
+        result = model(frame, verbose=False, conf=0.95)[0]
+        if result.masks is not None and result.boxes is not None:
+            masks = result.masks.data.cpu().numpy()
+            classes = result.boxes.cls.cpu().numpy().astype(int)
+            pixels = height * width
+            brown_pct = compute_coverage(masks, classes, 0, height, width, pixels)
+            green_pct = compute_coverage(masks, classes, 1, height, width, pixels)
+        output = result.plot(conf=False, labels=False, boxes=False, masks=True)
+
+    os.makedirs(CAPTURE_DIR, exist_ok=True)
+    captured_at = datetime.now(PH_TIMEZONE)
+    filename = f"browning-{captured_at.strftime('%Y%m%d-%H%M%S-%f')}.jpg"
+    image_path = os.path.join(CAPTURE_DIR, filename)
+    if not cv2.imwrite(image_path, output):
+        print("[CAPTURE] Failed to save scheduled image.")
+        return False
+    record = {
+        "image": f"/assets/captures/{filename}",
+        "captured_at": captured_at.isoformat(timespec="seconds"),
+        "brown_cov": round(brown_pct, 2),
+        "green_cov": round(green_pct, 2),
+        "temperature": telemetry.get("temperature"),
+        "water_level": telemetry.get("water_level"),
+    }
+    temp_path = LATEST_CAPTURE_PATH + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as record_file:
+        json.dump(record, record_file)
+    os.replace(temp_path, LATEST_CAPTURE_PATH)
+    with state_lock:
+        state["last_capture_date"] = today
+    print(f"[CAPTURE] Saved daily capture: {image_path}")
+    return True
+
+
+def capture_scheduler_thread():
+    """Check frequently so process startup at 08:00 still triggers today's capture."""
+    while True:
+        now = datetime.now(PH_TIMEZONE)
+        if now.hour == 8:
+            try:
+                run_daily_capture()
+            except Exception as exc:
+                print(f"[CAPTURE] Scheduled capture failed: {exc}")
+        time.sleep(max(1, 60 - datetime.now(PH_TIMEZONE).second))
 
 
 
@@ -277,6 +369,30 @@ def api_telemetry():
         return jsonify(dict(state["telemetry"]))
 
 
+@app.route("/api/browning/latest")
+def api_latest_browning_capture():
+    try:
+        with open(LATEST_CAPTURE_PATH, "r", encoding="utf-8") as record_file:
+            return jsonify(json.load(record_file))
+    except (OSError, json.JSONDecodeError):
+        return jsonify({"available": False}), 404
+
+
+@app.route("/api/browning/capture", methods=["POST"])
+def api_trigger_browning_capture():
+    with state_lock:
+        if state["stream_active"]:
+            return jsonify({"success": False, "error": "Stop the live camera stream before capturing."}), 409
+    try:
+        if not run_daily_capture(force=True):
+            return jsonify({"success": False, "error": "Camera capture failed. Check that the camera is connected."}), 503
+        with open(LATEST_CAPTURE_PATH, "r", encoding="utf-8") as record_file:
+            return jsonify({"success": True, "capture": json.load(record_file)})
+    except Exception as exc:
+        print(f"[CAPTURE] Manual capture failed: {exc}")
+        return jsonify({"success": False, "error": "Capture failed. Check the server log for details."}), 500
+
+
 def handle_shutdown(signum, _frame):
     print(f"\n[SHUTDOWN] Signal {signum} received — releasing camera.")
     release_camera()
@@ -286,6 +402,7 @@ def handle_shutdown(signum, _frame):
 if __name__ == "__main__":
     load_model()
     threading.Thread(target=sensor_thread, daemon=True).start()
+    threading.Thread(target=capture_scheduler_thread, daemon=True).start()
 
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)

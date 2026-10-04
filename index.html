@@ -225,18 +225,25 @@
                 d="M17 8C8 10 5.9 16.17 3.82 21.34L5.71 22l1-2.3A4.49 4.49 0 008 20C19 20 22 3 22 3c-1 2-8 2.25-13 3.25S2 11.5 2 13.5s1.75 3.75 1.75 3.75C7 8 17 8 17 8z" />
             </svg>
             <h3 class="section-title-text">Browning Detection</h3>
+            <button id="trigger-browning-capture" class="capture-trigger-btn" type="button">Capture now</button>
           </div>
 
           <!-- Secondary Tank Inspection View -->
           <div class="tank-feed-card">
             <div class="tank-image-wrapper">
-              <img src="assets/tank.png" alt="Azolla Browning Anomaly Camera View" loading="lazy" decoding="async">
+              <img id="browning-capture-image" src="assets/tank.png" alt="Latest scheduled Azolla browning detection capture" loading="lazy" decoding="async">
               <div class="feed-live-badge"
                 style="background: rgba(183, 28, 28, 0.85); border-color: rgba(255, 138, 128, 0.4); color: #ffebee;">
                 <span class="live-pulse-dot" style="background: #ff5252; box-shadow: 0 0 8px #ff5252;"></span>
-                <span>LATEST IMAGE CAPTURED</span>
+                <span id="browning-capture-time">DAILY CAPTURE · 8:00 AM PHT</span>
               </div>
             </div>
+          </div>
+          <div class="capture-details" aria-live="polite">
+            <div class="capture-detail"><span>Browning area</span><strong id="capture-brown-coverage">Waiting for capture</strong></div>
+            <div class="capture-detail"><span>Healthy area</span><strong id="capture-green-coverage">—</strong></div>
+            <div class="capture-detail"><span>Water temperature</span><strong id="capture-temperature">—</strong></div>
+            <div class="capture-detail"><span>Water level</span><strong id="capture-water-level">—</strong></div>
           </div>
 
         </section>

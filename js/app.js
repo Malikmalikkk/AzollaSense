@@ -22,6 +22,51 @@
   const backendBase = (window.AZOLLASENSE_BACKEND_URL || window.location.origin).replace(/\/$/, "");
   const backendUrl = (path) => `${backendBase}${path}`;
 
+  async function loadLatestBrowningCapture() {
+    try {
+      const response = await fetch(backendUrl("/api/browning/latest"), { cache: "no-store" });
+      if (!response.ok) return;
+      const capture = await response.json();
+      const image = byId("browning-capture-image");
+      if (image && capture.image) image.src = backendUrl(capture.image);
+      const time = byId("browning-capture-time");
+      if (time && capture.captured_at) {
+        const date = new Date(capture.captured_at);
+        time.textContent = `CAPTURED ${new Intl.DateTimeFormat("en-PH", {
+          timeZone: "Asia/Manila", dateStyle: "medium", timeStyle: "short"
+        }).format(date)} PHT`;
+      }
+      const setText = (id, value) => { const el = byId(id); if (el) el.textContent = value; };
+      setText("capture-brown-coverage", `${Number(capture.brown_cov).toFixed(2)}%`);
+      setText("capture-green-coverage", `${Number(capture.green_cov).toFixed(2)}%`);
+      setText("capture-temperature", capture.temperature == null ? "—" : `${capture.temperature}°C`);
+      setText("capture-water-level", capture.water_level == null ? "—" : `${capture.water_level} cm`);
+    } catch (error) {
+      console.warn("Could not load latest browning capture:", error);
+    }
+  }
+  loadLatestBrowningCapture();
+
+  const captureTrigger = byId("trigger-browning-capture");
+  if (captureTrigger) {
+    captureTrigger.addEventListener("click", async () => {
+      captureTrigger.disabled = true;
+      captureTrigger.textContent = "Capturing…";
+      try {
+        const response = await fetch(backendUrl("/api/browning/capture"), { method: "POST" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Capture failed.");
+        await loadLatestBrowningCapture();
+        showToast("Debug capture saved.");
+      } catch (error) {
+        showToast(error.message || "Could not capture image.");
+      } finally {
+        captureTrigger.disabled = false;
+        captureTrigger.textContent = "Capture now";
+      }
+    });
+  }
+
   // Graceful fallback if Socket.IO is unavailable (offline PWA/static hosting).
   const socket = typeof io === "function" ? io(backendBase) : { emit() {}, on() {} };
 
@@ -218,6 +263,7 @@
   socket.on("connect", () => {
     console.log("Socket.IO connected:", socket.id);
     showToast("✓ Connected to live AzollaSense stream");
+    loadLatestBrowningCapture();
   });
 
   socket.on("disconnect", () => {
