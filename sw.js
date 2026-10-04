@@ -5,18 +5,20 @@
  * with an offline fallback to the app shell.
  */
 
-const CACHE_NAME = "azollasense-v3";
+const CACHE_NAME = "azollasense-v4";
+const APP_BASE = new URL("./", self.registration.scope);
+const appPath = (path) => new URL(path.replace(/^\//, ""), APP_BASE).href;
 
 const CORE_ASSETS = [
-  "/",
-  "/index.html",
-  "/css/style.css",
-  "/js/app.js",
-  "/manifest.json",
-  "/assets/logo.png",
-  "/assets/tank.png",
-  "/assets/pond.jpg",
-  "/assets/welcome_bg.png",
+  "./",
+  "./index.html",
+  "./css/style.css",
+  "./js/app.js",
+  "./manifest.json",
+  "./assets/logo.png",
+  "./assets/tank.png",
+  "./assets/pond.jpg",
+  "./assets/welcome_bg.png",
 ];
 
 // Never cache: live streams, socket polling and API calls
@@ -58,11 +60,11 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== location.origin) return;
-  if (NETWORK_ONLY.some((path) => url.pathname.startsWith(path))) return;
+  if (NETWORK_ONLY.some((path) => url.href.startsWith(appPath(path)))) return;
 
   // Navigation requests: network first, fall back to the cached app shell
   if (request.mode === "navigate") {
-    event.respondWith(fetch(request).catch(() => caches.match("/index.html")));
+    event.respondWith(fetch(request).catch(() => caches.match(appPath("index.html"))));
     return;
   }
 
@@ -81,7 +83,7 @@ self.addEventListener("fetch", (event) => {
           })
           .catch(() => {
             if (request.destination === "image") {
-              return caches.match("/assets/logo.png");
+              return caches.match(appPath("assets/logo.png"));
             }
           })
     )

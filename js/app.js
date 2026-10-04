@@ -17,8 +17,13 @@
   const qsa = (selector, root = document) => Array.from(root.querySelectorAll(selector));
   const byId = (id) => document.getElementById(id);
 
-  // Graceful fallback if the Socket.IO CDN is unreachable (offline PWA)
-  const socket = typeof io === "function" ? io() : { emit() {}, on() {} };
+  // Set window.AZOLLASENSE_BACKEND_URL before this file when the backend is
+  // hosted separately (for example, on a camera-connected Raspberry Pi).
+  const backendBase = (window.AZOLLASENSE_BACKEND_URL || window.location.origin).replace(/\/$/, "");
+  const backendUrl = (path) => `${backendBase}${path}`;
+
+  // Graceful fallback if Socket.IO is unavailable (offline PWA/static hosting).
+  const socket = typeof io === "function" ? io(backendBase) : { emit() {}, on() {} };
 
   let streamRunning = false;
   let aiVisionOn = true;
@@ -94,7 +99,7 @@
 
     // Ask the backend to release the USB camera.
     // keepalive lets the request survive page navigation.
-    fetch("/stop_stream", { method: "POST", keepalive: true })
+    fetch(backendUrl("/stop_stream"), { method: "POST", keepalive: true })
       .then((response) => response.json())
       .catch(() => { /* camera already released or server offline */ });
 
@@ -109,7 +114,7 @@
   if (startBtn && liveFeed) {
     startBtn.addEventListener("click", () => {
       // Cache-bust so the browser always opens a fresh MJPEG session
-      liveFeed.src = `/video_feed?stream=${Date.now()}`;
+      liveFeed.src = backendUrl(`/video_feed?stream=${Date.now()}`);
       setStreamUI(true);
       showToast("Connecting to farm camera…");
     });
@@ -130,7 +135,7 @@
   window.addEventListener("beforeunload", () => {
     if (!streamRunning) return;
     // sendBeacon survives page unload where fetch() may be cancelled
-    navigator.sendBeacon("/stop_stream", new Blob([], { type: "application/json" }));
+    navigator.sendBeacon(backendUrl("/stop_stream"), new Blob([], { type: "application/json" }));
     if (liveFeed) liveFeed.removeAttribute("src");
   });
 
