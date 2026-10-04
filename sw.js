@@ -1,62 +1,90 @@
-const CACHE_NAME = 'azollasense-v1';
-const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/css/style.css',
-  '/js/app.js',
-  '/js/simulation.js',
-  '/assets/logo.png',
-  '/assets/tank.png',
-  '/assets/welcome_bg.png',
-  '/manifest.json'
+/**
+ * AzollaSense Service Worker
+ *
+ * Cache-first for static assets, network-first for navigation,
+ * with an offline fallback to the app shell.
+ */
+
+const CACHE_NAME = "azollasense-v2";
+
+const CORE_ASSETS = [
+  "/",
+  "/index.html",
+  "/css/style.css",
+  "/js/app.js",
+  "/js/simulation.js",
+  "/manifest.json",
+  "/assets/logo.png",
+  "/assets/tank.png",
+  "/assets/pond.jpg",
+  "/assets/welcome_bg.png",
 ];
 
-// Install — cache core assets
-self.addEventListener('install', (event) => {
+// Never cache: live streams, socket polling and API calls
+const NETWORK_ONLY = ["/video_feed", "/socket.io/", "/api/"];
+
+self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
-    })
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+      // Cache each asset individually so one missing file (e.g. an
+      // optional image) can never fail the whole installation.
+      await Promise.allSettled(
+        CORE_ASSETS.map((url) =>
+          cache.add(url).catch((err) => console.warn(`[SW] Cache failed: ${url}`, err))
+        )
+      );
+    })()
   );
   self.skipWaiting();
 });
 
-// Activate — clean up old caches
-self.addEventListener('activate', (event) => {
+self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
+    caches.keys().then((cacheNames) =>
+      Promise.all(
         cacheNames
           .filter((name) => name !== CACHE_NAME)
           .map((name) => caches.delete(name))
-      );
-    })
+      )
+    )
   );
   self.clients.claim();
 });
 
-// Fetch — serve from cache, fall back to network
-self.addEventListener('fetch', (event) => {
+self.addEventListener("fetch", (event) => {
+  const { request } = event;
+
+  if (request.method !== "GET") return;
+
+  const url = new URL(request.url);
+  if (url.origin !== location.origin) return;
+  if (NETWORK_ONLY.some((path) => url.pathname.startsWith(path))) return;
+
+  // Navigation requests: network first, fall back to the cached app shell
+  if (request.mode === "navigate") {
+    event.respondWith(fetch(request).catch(() => caches.match("/index.html")));
+    return;
+  }
+
+  // Everything else: cache first, then network + dynamic caching
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-      return fetch(event.request).then((networkResponse) => {
-        // Cache new resources dynamically
-        if (event.request.method === 'GET' && networkResponse.status === 200) {
-          const responseClone = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseClone);
-          });
-        }
-        return networkResponse;
-      });
-    }).catch(() => {
-      // Offline fallback
-      if (event.request.destination === 'document') {
-        return caches.match('/index.html');
-      }
-    })
+    caches.match(request).then(
+      (cached) =>
+        cached ||
+        fetch(request)
+          .then((response) => {
+            if (response && response.status === 200 && response.type === "basic") {
+              const clone = response.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+            }
+            return response;
+          })
+          .catch(() => {
+            if (request.destination === "image") {
+              return caches.match("/assets/logo.png");
+            }
+          })
+    )
   );
 });

@@ -13,6 +13,10 @@
   <meta name="theme-color" content="#194627">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.socket.io" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
 
@@ -51,7 +55,7 @@
           </h1>
         </a>
 
-        <button id="profile-btn" class="profile-btn" title="View Farm Operator Profile">
+        <button id="profile-btn" class="profile-btn" title="View Farm Operator Profile" aria-label="View farm operator profile">
           <svg class="profile-avatar-svg" viewBox="0 0 24 24">
             <circle cx="12" cy="12" r="10" fill="#e8f5e9" stroke="#3b7b4e" stroke-width="1.8" />
             <circle cx="12" cy="9" r="3.6" fill="#3b7b4e" />
@@ -70,8 +74,8 @@
 
           <div class="sub-heading-row">
             <h2 class="page-title">Welcome Back!</h2>
-            <button class="quick-chevron-btn" onclick="document.querySelector('[data-tab=status]').click()"
-              title="Go to System Status">
+            <button class="quick-chevron-btn" data-goto-tab="status" title="Go to System Status"
+              aria-label="Go to System Status">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
                 stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="7 17 12 12 7 7"></polyline>
@@ -86,46 +90,23 @@
               <img id="live-pi-feed" src="assets/pond.jpg" alt="Live Camera View of Azolla Cultivation Tank">
 
               <!-- Live Badge (Hidden until stream starts) -->
-              <div id="feed-live-badge" class="feed-live-badge">
+              <div id="feed-live-badge" class="feed-live-badge is-hidden">
                 <span class="live-pulse-dot"></span>
                 <span>LIVE FEED</span>
               </div>
 
               <!-- AI Vision Toggle (Hidden until stream starts) -->
-              <button id="toggle-cv-overlay" class="feed-toggle-btn" style="display: none; background: #2e7d32; color: #fff;">
+              <button id="toggle-cv-overlay" class="feed-toggle-btn vision-on is-hidden" aria-label="Toggle AI vision overlay" aria-pressed="true">
                 AI Vision: ON
               </button>
 
               <!-- Play Button Overlay -->
-              <button id="start-stream-btn" class="stream-play-btn" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 8px; background: rgba(25, 70, 39, 0.85); color: #fff; border: 2px solid #69f0ae; padding: 12px 24px; border-radius: 50px; font-weight: 700; cursor: pointer; z-index: 5; box-shadow: 0 8px 24px rgba(0,0,0,0.3); font-size: 16px; backdrop-filter: blur(4px); transition: 0.2s ease;">
+              <button id="start-stream-btn" class="stream-play-btn" aria-label="Start live camera stream">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                 Play
               </button>
 
-              <button
-                  id="stop-stream-btn"
-                  class="stream-stop-btn"
-                  style="
-                      position: absolute;
-                      top: auto;
-                      bottom: 16px;
-                      left: 50%;
-                      transform: translateX(-50%);
-                      display: none;
-                      align-items: center;
-                      gap: 8px;
-                      background: rgba(183, 28, 28, 0.90);
-                      color: #fff;
-                      border: 2px solid #ff8a80;
-                      padding: 10px 22px;
-                      border-radius: 50px;
-                      font-weight: 700;
-                      cursor: pointer;
-                      z-index: 5;
-                      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-                      font-size: 14px;
-                      backdrop-filter: blur(4px);
-                  ">
+              <button id="stop-stream-btn" class="stream-stop-btn is-hidden" aria-label="Stop live camera stream">
                   <svg
                       width="18"
                       height="18"
@@ -137,7 +118,7 @@
                   Stop Stream
               </button>
 
-              <button id="fullscreen-feed-btn" class="feed-fullscreen-btn" title="View Fullscreen">
+              <button id="fullscreen-feed-btn" class="feed-fullscreen-btn" title="View Fullscreen" aria-label="View camera feed fullscreen">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
                 </svg>
@@ -251,7 +232,7 @@
           <!-- Secondary Tank Inspection View -->
           <div class="tank-feed-card">
             <div class="tank-image-wrapper">
-              <img src="assets/tank.png" alt="Azolla Browning Anomaly Camera View">
+              <img src="assets/tank.png" alt="Azolla Browning Anomaly Camera View" loading="lazy" decoding="async">
               <div class="feed-live-badge"
                 style="background: rgba(183, 28, 28, 0.85); border-color: rgba(255, 138, 128, 0.4); color: #ffebee;">
                 <span class="live-pulse-dot" style="background: #ff5252; box-shadow: 0 0 8px #ff5252;"></span>
@@ -269,7 +250,7 @@
         <section id="view-status" class="tab-panel" aria-label="System Status">
 
           <div class="status-top-bar">
-            <button id="status-back-btn" class="back-circle-btn" title="Back to Dashboard">
+            <button id="status-back-btn" class="back-circle-btn" title="Back to Dashboard" aria-label="Back to dashboard">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
                 stroke-linecap="round" stroke-linejoin="round">
                 <line x1="19" y1="12" x2="5" y2="12"></line>
@@ -279,7 +260,7 @@
 
             <h2 class="status-screen-title">Status</h2>
 
-            <button id="status-logs-pill" class="logs-pill-btn" title="View historical telemetry logs">
+            <button id="status-logs-pill" class="logs-pill-btn" title="View historical telemetry logs" aria-label="View historical telemetry logs">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M4 20h3v-7H4v7zm6 0h3v-13h-3v13zm6 0h3v-9h-3v9z" />
               </svg>
@@ -291,7 +272,7 @@
           <div class="tank-status-container">
             <div class="tank-feed-card" style="margin-bottom: 0;">
               <div class="tank-image-wrapper">
-                <img src="assets/tank.png" alt="Azolla Cultivation System Overview Tank">
+                <img src="assets/tank.png" alt="Azolla Cultivation System Overview Tank" loading="lazy" decoding="async">
               </div>
             </div>
 
@@ -534,7 +515,7 @@
                 </div>
 
                 <!-- Update Interval -->
-                <div class="setting-row-card" onclick="showToast('Update Interval set to 10 Minutes')">
+                <div class="setting-row-card" data-toast="Update Interval set to 10 Minutes">
                   <div class="setting-left-side">
                     <div class="setting-icon-container">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -564,7 +545,7 @@
               <div class="settings-card-list">
 
                 <!-- Language -->
-                <div class="setting-row-card" onclick="showToast('Language: English')">
+                <div class="setting-row-card" data-toast="Language: English">
                   <div class="setting-left-side">
                     <div class="setting-icon-container">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -588,7 +569,7 @@
                 </div>
 
                 <!-- Time Format -->
-                <div class="setting-row-card" onclick="showToast('Time Format: 12-Hour')">
+                <div class="setting-row-card" data-toast="Time Format: 12-Hour">
                   <div class="setting-left-side">
                     <div class="setting-icon-container">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -614,7 +595,7 @@
           </div>
 
           <!-- Group B: Sensor Settings (Categorized) -->
-          <div class="settings-subgroup" data-group="sensor" style="display: none;">
+          <div class="settings-subgroup is-hidden" data-group="sensor">
             <div class="settings-group">
               <h3 class="settings-group-title">Thresholds & Calibration</h3>
               <div class="settings-card-list">
@@ -641,7 +622,7 @@
           </div>
 
           <!-- Group C: Machine Settings -->
-          <div class="settings-subgroup" data-group="machine" style="display: none;">
+          <div class="settings-subgroup is-hidden" data-group="machine">
             <div class="settings-group">
               <h3 class="settings-group-title">Actuator Hardware</h3>
               <div class="settings-card-list">
@@ -716,7 +697,6 @@
       </nav>
 
     </div>
-    </div>
   </main>
 
   <!-- ====================================================================
@@ -727,7 +707,7 @@
       <div class="sim-title">
         <span>🧪</span> IoT Sensor Telemetry Simulator
       </div>
-      <button id="sim-close-btn" class="sim-close-btn">&times;</button>
+      <button id="sim-close-btn" class="sim-close-btn" aria-label="Close simulator">&times;</button>
     </div>
 
     <!-- Sliders -->
@@ -779,7 +759,7 @@
     <div class="modal-box">
       <div class="modal-header">
         <h3 class="modal-title">System Event Audit Logs</h3>
-        <button class="modal-close">&times;</button>
+        <button class="modal-close" aria-label="Close dialog">&times;</button>
       </div>
       <div class="modal-body">
         <div class="logs-list">
@@ -828,7 +808,7 @@
     <div class="modal-box">
       <div class="modal-header">
         <h3 class="modal-title">Farm Operator Profile</h3>
-        <button class="modal-close">&times;</button>
+        <button class="modal-close" aria-label="Close dialog">&times;</button>
       </div>
       <div class="modal-body">
         <div style="text-align: center; margin-bottom: 16px;">
@@ -861,8 +841,8 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Application Scripts -->
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-  <script src="js/app.js?v=9"></script>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" defer></script>
+  <script src="js/app.js" defer></script>
   <script>
     // Register Service Worker for PWA
     if ('serviceWorker' in navigator) {

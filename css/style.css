@@ -2,8 +2,6 @@
    AzollaSense - IoT Eco-Agriculture Monitoring Web App
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap');
-
 :root {
   /* Nature & Foliage Theme Palette */
   --bg-primary: #e6f3e7;
@@ -110,7 +108,7 @@ body::before {
   top: 14px;
   left: 50%;
   transform: translateX(-50%);
-  display: none;
+  display: flex;
   align-items: center;
   gap: 12px;
   background: rgba(255, 255, 255, 0.92);
@@ -144,7 +142,6 @@ body::before {
   object-fit: contain;
 }
 
-.view-mode-toggle,
 .tool-btn {
   display: inline-flex;
   align-items: center;
@@ -160,7 +157,6 @@ body::before {
   transition: var(--transition-fast);
 }
 
-.view-mode-toggle:hover,
 .tool-btn:hover {
   background: #e2f2e5;
   border-color: var(--primary-leaf);
@@ -181,73 +177,6 @@ body::before {
   justify-content: center;
   align-items: center;
   z-index: 1;
-}
-
-/* Smartphone Device Bezel (Default Mobile App Presentation) */
-.device-container {
-  position: relative;
-  width: 100%;
-  max-width: 430px;
-  height: 890px;
-  background: #0f1c13;
-  border-radius: 52px;
-  padding: 12px;
-  box-shadow:
-    0 0 0 2px #3c5443,
-    0 25px 60px rgba(12, 33, 19, 0.4),
-    0 40px 100px rgba(0, 0, 0, 0.25);
-  transition: all 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-/* When in Expanded Desktop Mode */
-.device-container.mode-desktop {
-  max-width: 960px;
-  height: auto;
-  min-height: 850px;
-  border-radius: 28px;
-  padding: 0;
-  box-shadow: var(--shadow-lg);
-  background: transparent;
-}
-
-.device-container.mode-desktop .device-speaker,
-.device-container.mode-desktop .device-notch {
-  display: none;
-}
-
-/* Phone Hardware Elements */
-.device-notch {
-  position: absolute;
-  top: 18px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 120px;
-  height: 26px;
-  background: #09120c;
-  border-radius: 20px;
-  z-index: 200;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 10px;
-}
-
-.camera-lens {
-  width: 10px;
-  height: 10px;
-  background: #17241c;
-  border-radius: 50%;
-  border: 1px solid #23392a;
-}
-
-.sensor-dot {
-  width: 6px;
-  height: 6px;
-  background: #182b1f;
-  border-radius: 50%;
 }
 
 /* Mobile Screen Window */
@@ -271,30 +200,6 @@ body::before {
     height: 100vh;
     max-height: none;
   }
-}
-
-.device-container.mode-desktop .app-screen {
-  border-radius: 28px;
-  border: 1px solid rgba(138, 197, 155, 0.4);
-}
-
-/* Mobile Top Status Bar */
-.status-bar-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 24px 4px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--primary-dark);
-  z-index: 10;
-}
-
-.status-bar-icons {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
 }
 
 /* App Header */
@@ -403,56 +308,6 @@ body::before {
   transform: translateY(0);
 }
 
-/* ==========================================================================
-   1. Welcome Screen (Full-Screen Overlay inside .app-screen)
-   ========================================================================== */
-.welcome-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  padding: 80px 16px 0;
-  background: linear-gradient(180deg, #dcf2df 0%, #cde7d3 50%, #b8ddc0 100%);
-  border-radius: 40px;
-  overflow: hidden;
-  opacity: 1;
-  transition: opacity 0.6s ease, transform 0.5s ease;
-  pointer-events: auto;
-}
-
-.welcome-overlay.hidden {
-  opacity: 0;
-  transform: scale(1.04);
-  pointer-events: none;
-}
-
-.welcome-ambient-leaves {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  pointer-events: none;
-  background-image:
-    radial-gradient(circle at 10% 15%, rgba(93, 163, 114, 0.12) 0%, transparent 35%),
-    radial-gradient(circle at 90% 45%, rgba(93, 163, 114, 0.15) 0%, transparent 45%);
-}
-
-.welcome-center-content {
-  margin-top: 50px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  z-index: 2;
-}
-
 .welcome-dome-artwork {
   width: 170px;
   height: 170px;
@@ -512,25 +367,8 @@ body::before {
   box-shadow: 0 12px 28px rgba(35, 92, 53, 0.45);
 }
 
-.welcome-bottom-pond {
-  position: relative;
-  width: 100%;
-  margin-top: auto;
-  z-index: 1;
-  display: flex;
-  justify-content: center;
-}
-
-.welcome-pond-img {
-  width: 100%;
-  max-height: 280px;
-  object-fit: cover;
-  border-radius: 24px 24px 0 0;
-  filter: saturate(1.05);
-}
-
 /* ==========================================================================
-   2. Dashboard Screen
+   1. Dashboard Screen
    ========================================================================== */
 .sub-heading-row {
   display: flex;
@@ -697,62 +535,69 @@ body::before {
   transform: scale(1.05);
 }
 
-/* AI Computer Vision Overlays */
-.cv-overlay-layer {
+/* Stream start / stop controls */
+.stream-play-btn {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  z-index: 2;
-}
-
-.cv-overlay-layer.active {
-  opacity: 1;
-}
-
-.cv-box {
-  position: absolute;
-  border: 2px solid;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(1px);
-}
-
-.cv-box.anomaly {
-  border-color: #ff9800;
-  background: radial-gradient(circle, rgba(255, 152, 0, 0.28) 0%, rgba(255, 87, 34, 0.12) 100%);
-  box-shadow: 0 0 14px rgba(255, 152, 0, 0.4);
-}
-
-.cv-box.healthy {
-  border-color: #4caf50;
-  border-style: dashed;
-  background: rgba(76, 175, 80, 0.08);
-}
-
-.cv-tag {
-  position: absolute;
-  top: -19px;
-  left: -2px;
-  font-size: 10px;
-  font-weight: 800;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(25, 70, 39, 0.85);
   color: #fff;
-  padding: 1px 6px;
-  border-radius: 4px;
-  letter-spacing: 0.2px;
-  white-space: nowrap;
+  border: 2px solid #69f0ae;
+  padding: 12px 24px;
+  border-radius: 50px;
+  font-weight: 700;
+  font-size: 16px;
+  cursor: pointer;
+  z-index: 5;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(4px);
+  transition: 0.2s ease;
 }
 
-.cv-box.anomaly .cv-tag {
-  background: #e65100;
+.stream-play-btn:hover {
+  transform: translate(-50%, -50%) scale(1.05);
 }
 
-.cv-box.healthy .cv-tag {
+.stream-stop-btn {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(183, 28, 28, 0.9);
+  color: #fff;
+  border: 2px solid #ff8a80;
+  padding: 10px 22px;
+  border-radius: 50px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  z-index: 5;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(4px);
+  transition: 0.2s ease;
+}
+
+.stream-stop-btn:hover {
+  transform: translateX(-50%) scale(1.05);
+}
+
+/* AI vision toggle states (base .feed-toggle-btn = OFF look) */
+.feed-toggle-btn.vision-on {
   background: #2e7d32;
+  color: #ffffff;
+  border-color: #69f0ae;
+}
+
+/* Generic visibility utility (replaces inline display:none) */
+.is-hidden {
+  display: none !important;
 }
 
 /* 2x2 Sensor Telemetry Grid */
@@ -1324,11 +1169,6 @@ input:checked+.slider-knob::before {
   z-index: 50;
 }
 
-
-.device-container.mode-desktop .bottom-nav-bar {
-  border-radius: 0 0 28px 28px;
-}
-
 .nav-tab-btn {
   position: relative;
   display: flex;
@@ -1602,9 +1442,9 @@ input:checked+.slider-knob::before {
   overflow-y: auto;
 }
 
-/* Responsive Desktop Optimizations */
-@media (min-width: 900px) {
-  .device-container.mode-desktop .telemetry-grid {
-    grid-template-columns: repeat(4, 1fr);
+/* Responsive: hide the desktop presentation toolbar on small screens */
+@media (max-width: 760px) {
+  .presentation-bar {
+    display: none;
   }
 }

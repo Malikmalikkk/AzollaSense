@@ -1,356 +1,287 @@
 /**
- * AzollaSense - Main Application Logic & User Interaction
+ * AzollaSense — Main Application Logic
+ *
+ * Dashboard telemetry, live camera stream control, AI vision toggle,
+ * tab navigation, settings, modal dialogs and the IoT simulator drawer.
+ * All telemetry is server-driven: every value on screen originates from
+ * the "telemetry_update" Socket.IO broadcast sent by app-server.py.
  */
+(() => {
+  "use strict";
 
-document.addEventListener("DOMContentLoaded", () => {
-  // ================================================================
-  // LIVE STREAM + AI VISION TOGGLE
-  // ================================================================
+  /* ------------------------------------------------------------------ */
+  /* Helpers & element registry                                         */
+  /* ------------------------------------------------------------------ */
 
-  const socket = io();
+  const qs = (selector, root = document) => root.querySelector(selector);
+  const qsa = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+  const byId = (id) => document.getElementById(id);
 
-  // ================================================================
-  // LIVE CAMERA STREAM CONTROL
-  // ================================================================
-
-  const startStreamBtn = document.getElementById("start-stream-btn");
-  const stopStreamBtn = document.getElementById("stop-stream-btn");
-  const livePiFeed = document.getElementById("live-pi-feed");
-  const feedLiveBadge = document.getElementById("feed-live-badge");
-  const cvToggleBtn = document.getElementById("toggle-cv-overlay");
+  // Graceful fallback if the Socket.IO CDN is unreachable (offline PWA)
+  const socket = typeof io === "function" ? io() : { emit() {}, on() {} };
 
   let streamRunning = false;
-  let aiVisionState = true;
+  let aiVisionOn = true;
 
-  // ================================================================
-  // START STREAM
-  // ================================================================
+  /* ------------------------------------------------------------------ */
+  /* Toast notifications                                                */
+  /* ------------------------------------------------------------------ */
 
-  if (startStreamBtn && livePiFeed) {
-    startStreamBtn.addEventListener("click", () => {
-      console.log("[STREAM] Starting camera...");
+  function showToast(message) {
+    const container = byId("toast-container");
+    if (!container) return;
 
-      streamRunning = true;
+    const existing = qs(".toast", container);
+    if (existing) existing.remove();
 
-      // Request the stream ONLY after Play is clicked
-      livePiFeed.src = "/video_feed?stream=" + Date.now();
-
-      // Hide Play
-      startStreamBtn.style.display = "none";
-
-      // Show Stop
-      if (stopStreamBtn) {
-        stopStreamBtn.style.display = "flex";
-        console.log("[STREAM] Stop button shown");
-      }
-
-      // Show LIVE badge
-      if (feedLiveBadge) {
-        feedLiveBadge.style.display = "inline-flex";
-      }
-
-      // Show AI Vision toggle
-      if (cvToggleBtn) {
-        cvToggleBtn.style.display = "inline-flex";
-      }
-
-      showToast("Connecting to farm camera...");
-    });
+    const toast = document.createElement("div");
+    toast.className = "toast";
+    toast.innerHTML = `<span aria-hidden="true">🌿</span> ${message}`;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 3500);
   }
 
-  // ================================================================
-  // STOP STREAM
-  // ================================================================
+  /* ------------------------------------------------------------------ */
+  /* Live camera stream control                                         */
+  /* ------------------------------------------------------------------ */
 
-  if (stopStreamBtn) {
-    stopStreamBtn.addEventListener("click", () => {
-      console.log("[STREAM] Stop button clicked");
+  const liveFeed = byId("live-pi-feed");
+  const startBtn = byId("start-stream-btn");
+  const stopBtn = byId("stop-stream-btn");
+  const liveBadge = byId("feed-live-badge");
+  const cvToggleBtn = byId("toggle-cv-overlay");
 
-      streamRunning = false;
-
-      // Tell Flask to release USB camera
-      fetch("/stop_stream", {
-        method: "POST",
-      })
-        .then((response) => response.json())
-        .then((data) => {
-          console.log("[STREAM] Server response:", data);
-        })
-        .catch((error) => {
-          console.error("[STREAM] Stop request failed:", error);
-        });
-
-      // Remove MJPEG stream from browser
-      livePiFeed.removeAttribute("src");
-
-      // Reset UI
-      startStreamBtn.style.display = "flex";
-      stopStreamBtn.style.display = "none";
-
-      if (feedLiveBadge) {
-        feedLiveBadge.style.display = "none";
-      }
-
-      if (cvToggleBtn) {
-        cvToggleBtn.style.display = "none";
-      }
-
-      showToast("Camera stream stopped.");
-    });
+  function setStreamUI(running) {
+    streamRunning = running;
+    if (startBtn) startBtn.classList.toggle("is-hidden", running);
+    if (stopBtn) stopBtn.classList.toggle("is-hidden", !running);
+    if (liveBadge) liveBadge.classList.toggle("is-hidden", !running);
+    if (cvToggleBtn) cvToggleBtn.classList.toggle("is-hidden", !running);
   }
 
-  // ================================================================
-  // STOP CAMERA STREAM FUNCTION
-  // ================================================================
+  function resetVisionToggle() {
+    aiVisionOn = true;
+    if (!cvToggleBtn) return;
+    cvToggleBtn.textContent = "AI Vision: ON";
+    cvToggleBtn.classList.add("vision-on");
+    cvToggleBtn.setAttribute("aria-pressed", "true");
+  }
 
-  function stopCameraStream() {
-    if (!streamRunning) {
-      return;
-    }
+  function stopCameraStream(notify = true) {
+    if (!streamRunning) return;
 
-    console.log("[STREAM] Stopping camera stream...");
-
-    streamRunning = false;
-
-    // --------------------------------------------------------------
-    // FIRST: Tell Flask to release the USB camera
-    // --------------------------------------------------------------
-
-    fetch("/stop_stream", {
-      method: "POST",
-      keepalive: true,
-    })
+    // Ask the backend to release the USB camera.
+    // keepalive lets the request survive page navigation.
+    fetch("/stop_stream", { method: "POST", keepalive: true })
       .then((response) => response.json())
-      .then((data) => {
-        console.log("[STREAM] Backend stop response:", data);
-      })
-      .catch((error) => {
-        console.warn("[STREAM] Could not contact stop endpoint:", error);
-      });
+      .catch(() => { /* camera already released or server offline */ });
 
-    // --------------------------------------------------------------
-    // SECOND: Disconnect the browser MJPEG stream
-    // --------------------------------------------------------------
+    if (liveFeed) liveFeed.removeAttribute("src");
 
-    if (livePiFeed) {
-      livePiFeed.removeAttribute("src");
-    }
+    resetVisionToggle();
+    setStreamUI(false);
 
-    // --------------------------------------------------------------
-    // RESET UI
-    // --------------------------------------------------------------
-
-    if (startStreamBtn) {
-      startStreamBtn.style.display = "flex";
-    }
-
-    if (stopStreamBtn) {
-      stopStreamBtn.style.display = "none";
-    }
-
-    if (feedLiveBadge) {
-      feedLiveBadge.style.display = "none";
-    }
-
-    if (cvToggleBtn) {
-      cvToggleBtn.style.display = "none";
-
-      // Reset AI Vision state
-      cvToggleBtn.textContent = "AI Vision: ON";
-      cvToggleBtn.style.background = "#2e7d32";
-      cvToggleBtn.style.color = "#ffffff";
-    }
-
-    showToast("Camera stream stopped.");
+    if (notify) showToast("Camera stream stopped.");
   }
 
-  // ================================================================
-  // STOP STREAM WHEN PAGE IS RELOADED / CLOSED
-  // ================================================================
+  if (startBtn && liveFeed) {
+    startBtn.addEventListener("click", () => {
+      // Cache-bust so the browser always opens a fresh MJPEG session
+      liveFeed.src = `/video_feed?stream=${Date.now()}`;
+      setStreamUI(true);
+      showToast("Connecting to farm camera…");
+    });
+  }
+
+  if (liveFeed) {
+    liveFeed.addEventListener("error", () => {
+      if (!streamRunning) return;
+      setStreamUI(false);
+      showToast("⚠ Could not reach the camera stream.");
+    });
+  }
+
+  if (stopBtn) {
+    stopBtn.addEventListener("click", () => stopCameraStream());
+  }
 
   window.addEventListener("beforeunload", () => {
-    if (!streamRunning) {
-      return;
-    }
-
-    console.log("[STREAM] Page unloading - releasing camera.");
-
-    // Tell Flask to release the USB camera.
-    //
-    // sendBeacon is specifically useful here because normal
-    // fetch() requests can be cancelled when the page unloads.
-
-    const data = new Blob([], { type: "application/json" });
-
-    navigator.sendBeacon("/stop_stream", data);
-
-    // Disconnect browser-side MJPEG request
-    if (livePiFeed) {
-      livePiFeed.src = "";
-    }
+    if (!streamRunning) return;
+    // sendBeacon survives page unload where fetch() may be cancelled
+    navigator.sendBeacon("/stop_stream", new Blob([], { type: "application/json" }));
+    if (liveFeed) liveFeed.removeAttribute("src");
   });
 
-  // ================================================================
-  // AI VISION TOGGLE
-  // ================================================================
+  /* ------------------------------------------------------------------ */
+  /* AI vision toggle                                                   */
+  /* ------------------------------------------------------------------ */
 
   if (cvToggleBtn) {
     cvToggleBtn.addEventListener("click", () => {
-      aiVisionState = !aiVisionState;
+      aiVisionOn = !aiVisionOn;
 
-      console.log(`[AI VISION] ${aiVisionState ? "ON" : "OFF"}`);
+      socket.emit("toggle_ai_vision", { enabled: aiVisionOn });
 
-      socket.emit("toggle_ai_vision", {
-        enabled: aiVisionState,
-      });
+      cvToggleBtn.textContent = aiVisionOn ? "AI Vision: ON" : "AI Vision: OFF";
+      cvToggleBtn.classList.toggle("vision-on", aiVisionOn);
+      cvToggleBtn.setAttribute("aria-pressed", String(aiVisionOn));
+    });
+  }
 
-      if (aiVisionState) {
-        cvToggleBtn.textContent = "AI Vision: ON";
-        cvToggleBtn.style.background = "#2e7d32";
-        cvToggleBtn.style.color = "#ffffff";
+  /* ------------------------------------------------------------------ */
+  /* Fullscreen feed                                                    */
+  /* ------------------------------------------------------------------ */
+
+  const fullscreenBtn = byId("fullscreen-feed-btn");
+  if (fullscreenBtn) {
+    fullscreenBtn.addEventListener("click", () => {
+      const wrapper = fullscreenBtn.closest(".tank-image-wrapper");
+      if (!wrapper) return;
+
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
       } else {
-        cvToggleBtn.textContent = "AI Vision: OFF";
-        cvToggleBtn.style.background = "rgba(255,255,255,0.9)";
-        cvToggleBtn.style.color = "var(--primary-dark)";
+        wrapper.requestFullscreen().catch((err) => console.error("Fullscreen failed:", err));
       }
     });
   }
 
-  // Elements
-  const tabButtons = document.querySelectorAll(".nav-tab-btn");
-  const tabPanels = document.querySelectorAll(".tab-panel");
-  const presentationToggle = document.getElementById("toggle-view-mode");
-  const deviceContainer = document.getElementById("device-container");
-  const simToggleBtn = document.getElementById("toggle-sim-btn");
-  const simulatorPanel = document.getElementById("simulator-panel");
-  const simCloseBtn = document.getElementById("sim-close-btn");
+  /* ------------------------------------------------------------------ */
+  /* Tab navigation                                                     */
+  /* ------------------------------------------------------------------ */
 
-  // Welcome Screen actions
-  const welcomeCta = document.getElementById("welcome-cta");
-  const brandLogoHome = document.getElementById("brand-logo-home");
+  const tabButtons = qsa(".nav-tab-btn");
+  const tabPanels = qsa(".tab-panel");
 
-  // CV Browning Detection overlay
-  const cvOverlayLayer = document.getElementById("cv-overlay-layer");
-  const fullscreenFeedBtn = document.getElementById("fullscreen-feed-btn");
-
-  // Status Screen back button
-  const statusBackBtn = document.getElementById("status-back-btn");
-
-  // Settings elements
-  const settingsSegments = document.querySelectorAll(
-    ".settings-segmented-bar .segment-item",
-  );
-  const settingsGroups = document.querySelectorAll(".settings-subgroup");
-  const notifToggle = document.getElementById("setting-notif-toggle");
-  const notifStatusText = document.getElementById("notif-status-text");
-  const saveSettingsBtn = document.getElementById("save-settings-btn");
-
-  // Modals & Drawers
-  const viewAllLogsBtn = document.getElementById("view-all-logs-btn");
-  const statusLogsPill = document.getElementById("status-logs-pill");
-  const logsModal = document.getElementById("logs-modal");
-  const modalCloseBtns = document.querySelectorAll(".modal-close");
-  const profileBtn = document.getElementById("profile-btn");
-  const profileModal = document.getElementById("profile-modal");
-
-  // 1. Navigation Tab Switching
   function switchTab(targetTabId) {
-    // Hide all panels
-    tabPanels.forEach((panel) => panel.classList.remove("active"));
-    tabButtons.forEach((btn) => btn.classList.remove("active"));
+    tabPanels.forEach((panel) => panel.classList.toggle("active", panel.id === `view-${targetTabId}`));
+    tabButtons.forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === targetTabId));
 
-    // Show target panel
-    const activePanel = document.getElementById(`view-${targetTabId}`);
-    if (activePanel) {
-      activePanel.classList.add("active");
-    }
-
-    // Highlight nav button if applicable
-    const activeBtn = document.querySelector(
-      `.nav-tab-btn[data-tab="${targetTabId}"]`,
-    );
-    if (activeBtn) {
-      activeBtn.classList.add("active");
-    }
-
-    // Scroll to top
-    const scrollContainer = document.querySelector(".screen-scroll-container");
-    if (scrollContainer) {
-      scrollContainer.scrollTop = 0;
-    }
+    const scroller = qs(".screen-scroll-container");
+    if (scroller) scroller.scrollTop = 0;
   }
 
   tabButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const target = btn.getAttribute("data-tab");
-      switchTab(target);
-    });
+    btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
 
-  // Welcome CTA dismisses the splash overlay
-  const welcomeOverlay = document.getElementById("view-welcome");
-  if (welcomeCta && welcomeOverlay) {
-    welcomeCta.addEventListener("click", () => {
-      welcomeOverlay.classList.add("hidden");
-      // Remove from DOM after transition completes
-      setTimeout(() => {
-        welcomeOverlay.style.display = "none";
-      }, 650);
-    });
-  }
+  // Shortcut buttons that jump straight to a screen (e.g. dashboard chevron)
+  qsa("[data-goto-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => switchTab(btn.dataset.gotoTab));
+  });
 
-  if (brandLogoHome) {
-    brandLogoHome.addEventListener("click", (e) => {
+  const brandLogo = byId("brand-logo-home");
+  if (brandLogo) {
+    brandLogo.addEventListener("click", (e) => {
       e.preventDefault();
       switchTab("dashboard");
-
-      // Toggle IoT Simulator toolbar visibility
-      const presentationBar = document.querySelector(".presentation-bar");
-      if (presentationBar) {
-        if (presentationBar.style.display === "flex") {
-          presentationBar.style.display = "none";
-        } else {
-          presentationBar.style.display = "flex";
-        }
-      }
     });
   }
 
+  const statusBackBtn = byId("status-back-btn");
   if (statusBackBtn) {
     statusBackBtn.addEventListener("click", () => switchTab("dashboard"));
   }
 
-  // 2. View Mode Toggle (Mobile Mockup vs Desktop Expanded)
-  if (presentationToggle && deviceContainer) {
-    presentationToggle.addEventListener("click", () => {
-      const isDesktop = deviceContainer.classList.toggle("mode-desktop");
-      if (isDesktop) {
-        presentationToggle.innerHTML = `<span>📱</span> Mobile View`;
-      } else {
-        presentationToggle.innerHTML = `<span>🖥️</span> Expanded View`;
-      }
-    });
+
+  /* ------------------------------------------------------------------ */
+  /* IoT Simulator drawer                                               */
+  /* ------------------------------------------------------------------ */
+
+  const simToggleBtn = byId("toggle-sim-btn");
+  const simPanel = byId("simulator-panel");
+  const simCloseBtn = byId("sim-close-btn");
+
+  function setSimulatorOpen(open) {
+    if (simPanel) simPanel.classList.toggle("open", open);
+    if (simToggleBtn) simToggleBtn.classList.toggle("active", open);
   }
 
-  // 3. IoT Simulator Drawer Toggle
-  if (simToggleBtn && simulatorPanel) {
-    simToggleBtn.addEventListener("click", () => {
-      simulatorPanel.classList.toggle("open");
-      simToggleBtn.classList.toggle("active");
-    });
+  if (simToggleBtn && simPanel) {
+    simToggleBtn.addEventListener("click", () => setSimulatorOpen(!simPanel.classList.contains("open")));
   }
-
   if (simCloseBtn) {
-    simCloseBtn.addEventListener("click", () => {
-      simulatorPanel.classList.remove("open");
-      simToggleBtn.classList.remove("active");
+    simCloseBtn.addEventListener("click", () => setSimulatorOpen(false));
+  }
+
+  // Slider input id -> telemetry field emitted to the server
+  const SIM_SLIDERS = {
+    "sim-water": { field: "water_level", unit: " cm", decimals: 0 },
+    "sim-temp": { field: "temperature", unit: "°C", decimals: 1 },
+    "sim-ph": { field: "ph", unit: "", decimals: 1 },
+    "sim-cov": { field: "coverage", unit: "%", decimals: 0 },
+  };
+
+  const simControls = {};
+
+  Object.entries(SIM_SLIDERS).forEach(([inputId, cfg]) => {
+    const input = byId(inputId);
+    const valueLabel = byId(`${inputId}-val`);
+    if (!input || !valueLabel) return;
+
+    simControls[cfg.field] = { input, valueLabel, ...cfg };
+
+    input.addEventListener("input", () => {
+      const value = Number.parseFloat(input.value);
+      valueLabel.textContent = `${value.toFixed(cfg.decimals)}${cfg.unit}`;
+      scheduleSimEmit();
+    });
+  });
+
+  // Throttle slider emissions so rapid drags don't flood the socket
+  let simEmitTimer = null;
+  function scheduleSimEmit() {
+    if (simEmitTimer) return;
+    simEmitTimer = setTimeout(() => {
+      simEmitTimer = null;
+      const payload = {};
+      Object.entries(simControls).forEach(([field, control]) => {
+        payload[field] = Number.parseFloat(control.input.value);
+      });
+      socket.emit("sim_update", payload);
+    }, 120);
+  }
+
+  function applySimulatorValues(values) {
+    Object.entries(simControls).forEach(([field, control]) => {
+      if (values[field] === undefined) return;
+      const clamped = Math.min(
+        Number(control.input.max),
+        Math.max(Number(control.input.min), Number(values[field]))
+      );
+      control.input.value = clamped;
+      control.valueLabel.textContent = `${Number(clamped).toFixed(control.decimals)}${control.unit}`;
     });
   }
 
-  // Socket connection status
+  // Presets mirror SIM_PRESETS in app-server.py
+  const SIM_PRESETS = {
+    optimal: { water_level: 26, temperature: 28, ph: 7.0, coverage: 85 },
+    heatwave: { water_level: 22, temperature: 38.5, ph: 7.8, coverage: 60 },
+    acidic: { water_level: 26, temperature: 31, ph: 5.4, coverage: 55 },
+    mockup: { water_level: 26, temperature: 36, ph: 7.2, coverage: 75 },
+  };
+
+  qsa(".sim-preset-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const values = SIM_PRESETS[btn.dataset.preset];
+      if (!values) return;
+
+      // Instant local feedback; the server broadcast reconciles every client
+      applySimulatorValues(values);
+      socket.emit("sim_preset", { preset: btn.dataset.preset });
+      showToast(`Preset applied: ${btn.textContent.trim()}`);
+    });
+  });
+
+
+  /* ------------------------------------------------------------------ */
+  /* Socket.IO — connection state & live telemetry                      */
+  /* ------------------------------------------------------------------ */
+
   socket.on("connect", () => {
     console.log("Socket.IO connected:", socket.id);
-    showToast("✓ Connected to Live AzollaSense Stream");
+    showToast("✓ Connected to live AzollaSense stream");
   });
 
   socket.on("disconnect", () => {
@@ -358,146 +289,127 @@ document.addEventListener("DOMContentLoaded", () => {
     showToast("⚠ Connection to farm unit lost");
   });
 
-  // 5. Fullscreen Feed Toggle
-  if (fullscreenFeedBtn) {
-    fullscreenFeedBtn.addEventListener("click", () => {
-      // Find the closest wrapper to make fullscreen
-      const wrapper = fullscreenFeedBtn.closest(".tank-image-wrapper");
-      if (!wrapper) return;
+  socket.on("telemetry_update", (data) => {
+    const setValues = (selector, text) => qsa(selector).forEach((el) => { el.textContent = text; });
 
-      if (!document.fullscreenElement) {
-        wrapper.requestFullscreen().catch((err) => {
-          console.error(
-            `Error attempting to enable fullscreen: ${err.message}`,
-          );
-        });
+    if (data.water_level !== undefined) setValues(".val-water", `${data.water_level} cm`);
+    if (data.temperature !== undefined) setValues(".val-temp", `${data.temperature}°C`);
+    if (data.ph !== undefined) setValues(".val-ph", `${data.ph}`);
+    if (data.total_cov !== undefined) setValues(".val-cov", `${data.total_cov}%`);
+
+    qsa(".val-browning-sectors").forEach((el) => {
+      const brownPct = Number(data.brown_cov) || 0;
+      if (brownPct > 5.0) {
+        el.textContent = `Browning Detected: ${brownPct}%`;
+        el.style.color = "#e65100";
       } else {
-        document.exitFullscreen();
+        el.textContent = `Healthy (${brownPct}% browning)`;
+        el.style.color = "#2e7d32";
       }
     });
-  }
 
-  // 5. Settings Screen Interactivity
-  settingsSegments.forEach((segment) => {
+    const badgeText = qs(".system-status-badge span");
+    if (badgeText) {
+      const temp = Number(data.temperature) || 0;
+      const ph = Number(data.ph) || 7;
+      const brownPct = Number(data.brown_cov) || 0;
+      badgeText.textContent =
+        temp > 37.0 || ph < 6.0 || brownPct > 10.0
+          ? "System Alert: Action Required"
+          : "System Status";
+    }
+
+    // Keep the simulator drawer in sync with server-driven values
+    applySimulatorValues({
+      water_level: data.water_level,
+      temperature: data.temperature,
+      ph: data.ph,
+      coverage: data.total_cov,
+    });
+  });
+
+
+  /* ------------------------------------------------------------------ */
+  /* Settings screen                                                    */
+  /* ------------------------------------------------------------------ */
+
+  const settingSegments = qsa(".settings-segmented-bar .segment-item");
+  const settingGroups = qsa(".settings-subgroup");
+
+  settingSegments.forEach((segment) => {
     segment.addEventListener("click", () => {
-      settingsSegments.forEach((s) => s.classList.remove("active"));
-      segment.classList.add("active");
-
-      const targetCategory = segment.getAttribute("data-category");
-      settingsGroups.forEach((grp) => {
-        if (grp.getAttribute("data-group") === targetCategory) {
-          grp.style.display = "block";
-        } else {
-          grp.style.display = "none";
-        }
+      settingSegments.forEach((s) => s.classList.toggle("active", s === segment));
+      const category = segment.dataset.category;
+      settingGroups.forEach((group) => {
+        group.classList.toggle("is-hidden", group.dataset.group !== category);
       });
     });
   });
 
+  const notifToggle = byId("setting-notif-toggle");
+  const notifStatusText = byId("notif-status-text");
   if (notifToggle && notifStatusText) {
-    notifToggle.addEventListener("change", (e) => {
-      notifStatusText.textContent = e.target.checked ? "Enabled" : "Disabled";
-      window.AzollaEngine.state.notifications = e.target.checked;
+    notifToggle.addEventListener("change", () => {
+      notifStatusText.textContent = notifToggle.checked ? "Enabled" : "Disabled";
     });
   }
 
+  // Static info cards that simply acknowledge via toast
+  qsa("[data-toast]").forEach((el) => {
+    el.addEventListener("click", () => showToast(el.dataset.toast));
+  });
+
+  const saveSettingsBtn = byId("save-settings-btn");
   if (saveSettingsBtn) {
-    saveSettingsBtn.addEventListener("click", () => {
-      showToast("✓ Settings updated successfully");
-    });
+    saveSettingsBtn.addEventListener("click", () => showToast("✓ Settings updated successfully"));
   }
 
-  // 6. Modals (Logs & Profile)
+  /* ------------------------------------------------------------------ */
+  /* Modals (event logs & operator profile)                             */
+  /* ------------------------------------------------------------------ */
+
+  const modalBackdrops = qsa(".modal-backdrop");
+  const logsModal = byId("logs-modal");
+  const profileModal = byId("profile-modal");
+
   function openModal(modal) {
     if (modal) modal.classList.add("open");
   }
 
   function closeModals() {
-    document
-      .querySelectorAll(".modal-backdrop")
-      .forEach((m) => m.classList.remove("open"));
+    modalBackdrops.forEach((modal) => modal.classList.remove("open"));
   }
 
-  if (viewAllLogsBtn)
-    viewAllLogsBtn.addEventListener("click", () => openModal(logsModal));
-  if (statusLogsPill)
-    statusLogsPill.addEventListener("click", () => openModal(logsModal));
-  if (profileBtn)
-    profileBtn.addEventListener("click", () => openModal(profileModal));
+  const viewAllLogsBtn = byId("view-all-logs-btn");
+  if (viewAllLogsBtn) {
+    viewAllLogsBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      openModal(logsModal);
+    });
+  }
 
-  modalCloseBtns.forEach((btn) => {
+  const statusLogsPill = byId("status-logs-pill");
+  if (statusLogsPill) {
+    statusLogsPill.addEventListener("click", () => openModal(logsModal));
+  }
+
+  const profileBtn = byId("profile-btn");
+  if (profileBtn) {
+    profileBtn.addEventListener("click", () => openModal(profileModal));
+  }
+
+  qsa(".modal-close").forEach((btn) => {
     btn.addEventListener("click", closeModals);
   });
 
-  document.querySelectorAll(".modal-backdrop").forEach((backdrop) => {
+  modalBackdrops.forEach((backdrop) => {
     backdrop.addEventListener("click", (e) => {
       if (e.target === backdrop) closeModals();
     });
   });
 
-  // ====================================================================
-  // 7. LIVE RASPBERRY PI BACKEND CONNECTION (Socket.IO)
-  // ====================================================================
-
-  // Listen for the live data payload from app_server.py
-  socket.on("telemetry_update", (data) => {
-    // 1. Update Water Level
-    document.querySelectorAll(".val-water").forEach((el) => {
-      el.textContent = `${data.water_level} cm`;
-    });
-
-    // 2. Update Temperature
-    document.querySelectorAll(".val-temp").forEach((el) => {
-      el.textContent = `${data.temperature}°C`;
-    });
-
-    // 3. Update pH Level
-    document.querySelectorAll(".val-ph").forEach((el) => {
-      el.textContent = `${data.ph}`;
-    });
-
-    // 4. Update Pond Surface Coverage (Total % detected by YOLO)
-    document.querySelectorAll(".val-cov").forEach((el) => {
-      el.textContent = `${data.total_cov}%`;
-    });
-
-    // 5. Update Browning Sector Warning text
-    document.querySelectorAll(".val-browning-sectors").forEach((el) => {
-      if (data.brown_cov > 5.0) {
-        el.textContent = `Browning Detected: ${data.brown_cov}%`;
-        el.style.color = "#e65100"; // Orange warning color
-      } else {
-        el.textContent = `Healthy (${data.brown_cov}% browning)`;
-        el.style.color = "#2e7d32"; // Green healthy color
-      }
-    });
-
-    // 6. Update global status badge logic
-    const statusBadge = document.querySelector(".system-status-badge span");
-    if (statusBadge) {
-      if (data.temperature > 37.0 || data.ph < 6.0 || data.brown_cov > 10.0) {
-        statusBadge.textContent = "System Alert: Action Required";
-      } else {
-        statusBadge.textContent = "System Status";
-      }
-    }
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeModals();
   });
+})();
 
-  // Toast Helper
-  function showToast(msg) {
-    const existing = document.querySelector(".toast");
-    if (existing) existing.remove();
-
-    const toast = document.createElement("div");
-    toast.className = "toast";
-    toast.innerHTML = `<span>🌿</span> ${msg}`;
-
-    const container = document.getElementById("toast-container");
-    if (container) {
-      container.appendChild(toast);
-      setTimeout(() => toast.remove(), 3500);
-    }
-  }
-
-  window.showToast = showToast;
-});
