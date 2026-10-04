@@ -42,6 +42,28 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* App loader (welcome splash)                                        */
+  /* ------------------------------------------------------------------ */
+
+  const appLoader = byId("app-loader");
+  let loaderDismissed = false;
+
+  function dismissLoader() {
+    if (loaderDismissed || !appLoader) return;
+    loaderDismissed = true;
+    appLoader.classList.add("is-dismissed");
+    // Drop the node from the DOM once the fade-out finishes
+    setTimeout(() => appLoader.remove(), 550);
+  }
+
+  // Reveal the app as soon as the page settles. The Socket.IO connect
+  // event dismisses it earlier when the farm unit is reachable, and the
+  // safety timeout keeps the loader from sticking around when offline.
+  window.addEventListener("load", () => setTimeout(dismissLoader, 450));
+  socket.on("connect", dismissLoader);
+  setTimeout(dismissLoader, 6000);
+
+  /* ------------------------------------------------------------------ */
   /* Live camera stream control                                         */
   /* ------------------------------------------------------------------ */
 

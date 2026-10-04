@@ -5,7 +5,7 @@
  * with an offline fallback to the app shell.
  */
 
-const CACHE_NAME = "azollasense-v2";
+const CACHE_NAME = "azollasense-v3";
 
 const CORE_ASSETS = [
   "/",
