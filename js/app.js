@@ -81,7 +81,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
       // Remove MJPEG stream from browser
-      livePiFeed.src = "assets/tank.png";
+      livePiFeed.removeAttribute("src");
 
       // Reset UI
       startStreamBtn.style.display = "flex";
@@ -133,7 +133,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // --------------------------------------------------------------
 
     if (livePiFeed) {
-      livePiFeed.src = "assets/tank.png";
+      livePiFeed.removeAttribute("src");
     }
 
     // --------------------------------------------------------------

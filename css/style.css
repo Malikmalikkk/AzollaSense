@@ -582,7 +582,8 @@ body::before {
 .tank-image-wrapper {
   position: relative;
   width: 100%;
-  aspect-ratio: 827 / 341;
+  aspect-ratio: 1 / 1;
+  background: #737873;
   overflow: hidden;
 }
 
@@ -601,6 +602,7 @@ body::before {
   height: 100%;
   object-fit: cover;
   display: block;
+  background: #737873;
 }
 
 .tank-image-wrapper:fullscreen img {

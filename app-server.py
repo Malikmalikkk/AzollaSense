@@ -39,7 +39,7 @@ def generate_camera_stream():
             print("[CAMERA] Opening USB webcam...")
             camera = cv2.VideoCapture(0, cv2.CAP_V4L2)
             camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 640)
 
             if not camera.isOpened():
                 print("[CAMERA] ERROR: Could not open USB webcam.")
@@ -63,6 +63,15 @@ def generate_camera_stream():
             if not success:
                 time.sleep(0.01)
                 continue
+
+            # Normalize camera output to a centered 640x640 square. Many webcams
+            # ignore the requested capture dimensions and return 640x480 instead.
+            h, w = frame.shape[:2]
+            side = min(h, w)
+            top = (h - side) // 2
+            left = (w - side) // 2
+            frame = frame[top:top + side, left:left + side]
+            frame = cv2.resize(frame, (640, 640), interpolation=cv2.INTER_AREA)
 
             h, w, _ = frame.shape
             total_pixels = h * w
