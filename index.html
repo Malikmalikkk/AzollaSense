@@ -23,13 +23,7 @@
 <body>
 
   <!-- App Loader (welcome backdrop) -->
-  <div id="app-loader" class="app-loader" role="status" aria-label="Loading AzollaSense">
-    <div class="loader-content">
-      <div class="loader-spinner"></div>
-      <div class="loader-brand">AzollaSense</div>
-      <div class="loader-subtitle">Preparing your dashboard…</div>
-    </div>
-  </div>
+  <div id="app-loader" class="app-loader" role="presentation" aria-hidden="true"></div>
 
   <!-- Main Viewport Wrap -->
   <main class="app-viewport">
@@ -794,7 +788,7 @@
 
   <!-- Application Scripts -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" defer></script>
-  <script src="./js/app.js?v=12" defer></script>
+  <script src="./js/app.js?v=13" defer></script>
   <script>
     // Register Service Worker for PWA
     if ('serviceWorker' in navigator) {
