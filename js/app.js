@@ -198,21 +198,39 @@ document.addEventListener("DOMContentLoaded", () => {
     cvToggleBtn.addEventListener("click", () => {
       aiVisionState = !aiVisionState;
 
-      console.log(`[AI VISION] ${aiVisionState ? "ON" : "OFF"}`);
+      console.log("[AI VISION] Sending state:", aiVisionState);
 
-      socket.emit("toggle_ai_vision", {
-        enabled: aiVisionState,
-      });
+      // Send state to Flask
+      socket.emit(
+        "toggle_ai_vision",
+        {
+          enabled: aiVisionState,
+        },
+        (response) => {
+          console.log("[AI VISION] Backend response:", response);
 
-      if (aiVisionState) {
-        cvToggleBtn.textContent = "AI Vision: ON";
-        cvToggleBtn.style.background = "#2e7d32";
-        cvToggleBtn.style.color = "#ffffff";
-      } else {
-        cvToggleBtn.textContent = "AI Vision: OFF";
-        cvToggleBtn.style.background = "rgba(255,255,255,0.9)";
-        cvToggleBtn.style.color = "var(--primary-dark)";
-      }
+          // Backend did not acknowledge
+          if (!response || !response.success) {
+            console.error("[AI VISION] Backend failed to change state");
+
+            // Revert local state
+            aiVisionState = !aiVisionState;
+
+            return;
+          }
+
+          // Backend confirmed the state
+          if (response.enabled) {
+            cvToggleBtn.textContent = "AI Vision: ON";
+            cvToggleBtn.style.background = "#2e7d32";
+            cvToggleBtn.style.color = "#ffffff";
+          } else {
+            cvToggleBtn.textContent = "AI Vision: OFF";
+            cvToggleBtn.style.background = "rgba(255,255,255,0.9)";
+            cvToggleBtn.style.color = "var(--primary-dark)";
+          }
+        },
+      );
     });
   }
 
