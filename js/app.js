@@ -267,6 +267,15 @@
     showToast("⚠ Connection to farm unit lost");
   });
 
+  socket.on("stream_preempted", () => {
+    if (liveFeed) liveFeed.removeAttribute("src");
+    resetVisionToggle();
+    setStreamUI(false);
+    showToast("Live stream stopped so the camera can capture an image.");
+  });
+
+  socket.on("browning_capture_updated", loadLatestBrowningCapture);
+
   socket.on("telemetry_update", (data) => {
     const setValues = (selector, text) => qsa(selector).forEach((el) => { el.textContent = text; });
 

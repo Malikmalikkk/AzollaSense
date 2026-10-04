@@ -53,6 +53,7 @@ state = {
     },
     "ai_vision_enabled": True,
     "stream_active": False,
+    "capture_in_progress": False,
     "camera": None,
     "model": None,
     "model_status": "not loaded",
@@ -131,7 +132,7 @@ def compute_coverage(masks_array, classes, target_class, height, width, total_pi
     return float(np.sum(mask) / total_pixels * 100.0)
 
 
-def run_daily_capture(force=False):
+def _capture_image(force=False):
     """Capture and analyze a frame; force bypasses the daily schedule guard."""
     now = datetime.now(PH_TIMEZONE)
     today = now.date().isoformat()
@@ -145,7 +146,7 @@ def run_daily_capture(force=False):
     except (OSError, json.JSONDecodeError):
         pass
     with state_lock:
-        if (not force and state["last_capture_date"] == today) or state["stream_active"]:
+        if not force and state["last_capture_date"] == today:
             return False
 
     camera = open_camera()
@@ -211,6 +212,28 @@ def run_daily_capture(force=False):
         state["last_capture_date"] = today
     print(f"[CAPTURE] Saved daily capture: {image_path}")
     return True
+
+
+def run_daily_capture(force=False):
+    """Give a requested capture exclusive camera access, preempting live video."""
+    with state_lock:
+        if state["capture_in_progress"]:
+            return False
+        state["capture_in_progress"] = True
+        stream_was_active = state["stream_active"]
+    try:
+        if stream_was_active:
+            print("[CAPTURE] Stopping live stream to prioritize image capture.")
+            release_camera()
+            socketio.emit("stream_preempted", {"reason": "image_capture"})
+            time.sleep(0.25)
+        captured = _capture_image(force=force)
+        if captured:
+            socketio.emit("browning_capture_updated", {"success": True})
+        return captured
+    finally:
+        with state_lock:
+            state["capture_in_progress"] = False
 
 
 def capture_scheduler_thread():
@@ -343,6 +366,8 @@ def serve_index():
 @app.route("/video_feed")
 def video_feed():
     with state_lock:
+        if state["capture_in_progress"]:
+            return jsonify({"error": "image capture in progress"}), 409
         if state["stream_active"]:
             # Only one MJPEG consumer may hold the USB camera at a time
             return jsonify({"error": "camera stream already active"}), 503
@@ -391,9 +416,6 @@ def api_latest_browning_capture():
 
 @app.route("/api/browning/capture", methods=["POST"])
 def api_trigger_browning_capture():
-    with state_lock:
-        if state["stream_active"]:
-            return jsonify({"success": False, "error": "Stop the live camera stream before capturing."}), 409
     try:
         if not run_daily_capture(force=True):
             return jsonify({"success": False, "error": "Camera capture failed. Check that the camera is connected."}), 503
