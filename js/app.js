@@ -37,8 +37,9 @@
         }).format(date)} PHT`;
       }
       const setText = (id, value) => { const el = byId(id); if (el) el.textContent = value; };
-      setText("capture-brown-coverage", `${Number(capture.brown_cov).toFixed(2)}%`);
-      setText("capture-green-coverage", `${Number(capture.green_cov).toFixed(2)}%`);
+      const yoloUnavailable = capture.brown_cov == null || capture.green_cov == null;
+      setText("capture-brown-coverage", yoloUnavailable ? "YOLO unavailable" : `${Number(capture.brown_cov).toFixed(2)}%`);
+      setText("capture-green-coverage", yoloUnavailable ? "YOLO unavailable" : `${Number(capture.green_cov).toFixed(2)}%`);
       setText("capture-temperature", capture.temperature == null ? "—" : `${capture.temperature}°C`);
       setText("capture-water-level", capture.water_level == null ? "—" : `${capture.water_level} cm`);
     } catch (error) {

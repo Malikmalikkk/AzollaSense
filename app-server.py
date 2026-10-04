@@ -29,6 +29,7 @@ MAX_FPS = 15
 # How often telemetry is broadcast while the camera stream is running
 STREAM_TELEMETRY_INTERVAL = 0.5
 CAPTURE_CAMERA_WARMUP_SECONDS = 5
+YOLO_CONFIDENCE_THRESHOLD = 0.25
 PH_TIMEZONE = ZoneInfo("Asia/Manila")
 CAPTURE_DIR = os.path.join(BASE_DIR, "assets", "captures")
 LATEST_CAPTURE_PATH = os.path.join(CAPTURE_DIR, "latest.json")
@@ -168,14 +169,18 @@ def run_daily_capture(force=False):
     height, width = frame.shape[:2]
     with state_lock:
         model = state["model"]
+        model_status = state["model_status"]
         telemetry = dict(state["telemetry"])
-    brown_pct = green_pct = 0.0
+    brown_pct = green_pct = None
     output = frame
+    detection_count = 0
     if model is not None:
-        result = model(frame, verbose=False, conf=0.95)[0]
+        result = model(frame, verbose=False, conf=YOLO_CONFIDENCE_THRESHOLD)[0]
+        brown_pct = green_pct = 0.0
         if result.masks is not None and result.boxes is not None:
             masks = result.masks.data.cpu().numpy()
             classes = result.boxes.cls.cpu().numpy().astype(int)
+            detection_count = len(classes)
             pixels = height * width
             brown_pct = compute_coverage(masks, classes, 0, height, width, pixels)
             green_pct = compute_coverage(masks, classes, 1, height, width, pixels)
@@ -191,8 +196,10 @@ def run_daily_capture(force=False):
     record = {
         "image": f"/assets/captures/{filename}",
         "captured_at": captured_at.isoformat(timespec="seconds"),
-        "brown_cov": round(brown_pct, 2),
-        "green_cov": round(green_pct, 2),
+        "brown_cov": round(brown_pct, 2) if brown_pct is not None else None,
+        "green_cov": round(green_pct, 2) if green_pct is not None else None,
+        "model_status": model_status,
+        "detection_count": detection_count,
         "temperature": telemetry.get("temperature"),
         "water_level": telemetry.get("water_level"),
     }
@@ -259,7 +266,7 @@ def generate_camera_stream():
             output_frame = frame
 
             if model is not None:
-                result = model(frame, verbose=False, conf=0.9)[0]
+                result = model(frame, verbose=False, conf=YOLO_CONFIDENCE_THRESHOLD)[0]
 
                 if result.masks is not None and result.boxes is not None:
                     masks_array = result.masks.data.cpu().numpy()
