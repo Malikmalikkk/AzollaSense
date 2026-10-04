@@ -583,7 +583,6 @@ body::before {
 .tank-image-wrapper {
   position: absolute;
   inset: 0;
-  background: #737873;
   overflow: hidden;
 }
 
@@ -602,7 +601,6 @@ body::before {
   height: 100%;
   object-fit: cover;
   display: block;
-  background: #737873;
 }
 
 .tank-image-wrapper:fullscreen img {
