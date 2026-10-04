@@ -259,7 +259,7 @@ def generate_camera_stream():
             output_frame = frame
 
             if model is not None:
-                result = model(frame, verbose=False, conf=0.95)[0]
+                result = model(frame, verbose=False, conf=0.9)[0]
 
                 if result.masks is not None and result.boxes is not None:
                     masks_array = result.masks.data.cpu().numpy()
