@@ -28,6 +28,7 @@ FRAME_SIZE = 640
 MAX_FPS = 15
 # How often telemetry is broadcast while the camera stream is running
 STREAM_TELEMETRY_INTERVAL = 0.5
+CAPTURE_CAMERA_WARMUP_SECONDS = 5
 PH_TIMEZONE = ZoneInfo("Asia/Manila")
 CAPTURE_DIR = os.path.join(BASE_DIR, "assets", "captures")
 LATEST_CAPTURE_PATH = os.path.join(CAPTURE_DIR, "latest.json")
@@ -151,8 +152,11 @@ def run_daily_capture(force=False):
         print("[CAPTURE] Could not open camera for scheduled capture.")
         return False
     try:
-        # Allow auto exposure/focus to settle before using the frame.
-        time.sleep(0.5)
+        # Discard warm-up frames while auto exposure/focus adapts to the lighting.
+        warmup_until = time.monotonic() + CAPTURE_CAMERA_WARMUP_SECONDS
+        while time.monotonic() < warmup_until:
+            camera.read()
+            time.sleep(0.1)
         success, frame = camera.read()
     finally:
         camera.release()
