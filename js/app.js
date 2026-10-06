@@ -138,7 +138,7 @@
   function stopCameraStream(notify = true) {
     if (!streamRunning) return;
 
-    // Ask the backend to release the USB camera.
+    // Ask the backend to release the Raspberry Pi Camera.
     // keepalive lets the request survive page navigation.
     fetch(backendUrl("/stop_stream"), { method: "POST", keepalive: true })
       .then((response) => response.json())
@@ -282,6 +282,7 @@
     if (data.water_level !== undefined) setValues(".val-water", `${data.water_level} cm`);
     if (data.temperature !== undefined) setValues(".val-temp", `${data.temperature}°C`);
     if (data.ph !== undefined) setValues(".val-ph", `${data.ph}`);
+    if (data.lux !== undefined && data.lux !== null) setValues(".val-lux", `${Math.round(data.lux)} lx`);
     if (data.total_cov !== undefined) setValues(".val-cov", `${data.total_cov}%`);
 
     qsa(".val-browning-sectors").forEach((el) => {
@@ -306,6 +307,38 @@
           : "System Status";
     }
 
+  });
+
+  const actuatorInputs = {
+    motor: byId("motor-switch"),
+    solenoid: byId("solenoid-switch"),
+    pump: byId("pump-switch"),
+    canopy_auto: byId("canopy-auto-switch")
+  };
+  Object.entries(actuatorInputs).forEach(([name, input]) => {
+    if (!input) return;
+    input.addEventListener("change", () => {
+      input.disabled = true;
+      socket.emit("set_actuator", { name, enabled: input.checked }, (reply) => {
+        input.disabled = false;
+        if (!reply || !reply.success) {
+          input.checked = !input.checked;
+          showToast(reply?.error || "Could not send command to the ESP32.");
+        }
+      });
+    });
+  });
+
+  socket.on("actuator_update", (data) => {
+    Object.entries(actuatorInputs).forEach(([name, input]) => {
+      const stateKey = name === "pump" ? "pump_manual" : name;
+      if (input && data[stateKey] !== undefined) input.checked = Boolean(data[stateKey]);
+    });
+    const connection = byId("device-connection-status");
+    if (connection) {
+      connection.textContent = data.device_connected ? "Connected" : "Disconnected";
+      connection.style.color = data.device_connected ? "#2e7d32" : "#c62828";
+    }
   });
 
 

@@ -616,6 +616,10 @@
                   </div>
                   <span class="setting-status-text">20 - 30 cm</span>
                 </div>
+                <div class="setting-row-card">
+                  <div class="setting-left-side"><span class="setting-label">Current light intensity</span></div>
+                  <span class="setting-status-text val-lux">— lx</span>
+                </div>
               </div>
             </div>
           </div>
@@ -636,6 +640,38 @@
                     <span class="setting-label">Retractable Canopy</span>
                   </div>
                   <span class="setting-status-text" style="color: #2e7d32; font-weight:700;">AUTO (Sun Sensor)</span>
+                </div>
+                <div class="setting-row-card">
+                  <div class="setting-left-side"><span class="setting-label">ESP32 device</span></div>
+                  <span id="device-connection-status" class="setting-status-text">Disconnected</span>
+                </div>
+                <div class="setting-row-card">
+                  <div class="setting-left-side"><span class="setting-label">Canopy automatic light control</span></div>
+                  <label class="switch-control" aria-label="Automatic canopy light control">
+                    <input id="canopy-auto-switch" type="checkbox" checked>
+                    <span class="slider-knob"></span>
+                  </label>
+                </div>
+                <div class="setting-row-card">
+                  <div class="setting-left-side"><span class="setting-label">Canopy motor (manual deploy / retract)</span></div>
+                  <label class="switch-control" aria-label="Manual canopy motor control">
+                    <input id="motor-switch" type="checkbox">
+                    <span class="slider-knob"></span>
+                  </label>
+                </div>
+                <div class="setting-row-card">
+                  <div class="setting-left-side"><span class="setting-label">Harvest drain solenoid</span></div>
+                  <label class="switch-control" aria-label="Harvest drain solenoid control">
+                    <input id="solenoid-switch" type="checkbox">
+                    <span class="slider-knob"></span>
+                  </label>
+                </div>
+                <div class="setting-row-card">
+                  <div class="setting-left-side"><span class="setting-label">Pump manual run request (auto fill remains active)</span></div>
+                  <label class="switch-control" aria-label="Manual pump run request">
+                    <input id="pump-switch" type="checkbox">
+                    <span class="slider-knob"></span>
+                  </label>
                 </div>
               </div>
             </div>
@@ -788,7 +824,7 @@
 
   <!-- Application Scripts -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" defer></script>
-  <script src="./js/app.js?v=14" defer></script>
+  <script src="./js/app.js?v=15" defer></script>
   <script>
     // Register Service Worker for PWA
     if ('serviceWorker' in navigator) {

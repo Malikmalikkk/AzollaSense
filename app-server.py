@@ -1,7 +1,7 @@
 """
 AzollaSense — Flask + Socket.IO backend
 
-Serves the web app, streams the USB camera as MJPEG, runs YOLO
+Serves the web app, streams the Raspberry Pi Camera as MJPEG, runs YOLO
 segmentation for browning detection and relays telemetry to every connected client.
 """
 
@@ -15,9 +15,15 @@ from zoneinfo import ZoneInfo
 
 import cv2
 import numpy as np
-from flask import Flask, Response, jsonify, send_from_directory
+try:
+    from picamera2 import Picamera2
+except ImportError:
+    Picamera2 = None
+from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_socketio import SocketIO
 from ultralytics import YOLO
+import serial
+from serial.tools import list_ports
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "runs", "segment", "train", "weights", "best_ncnn_model")
@@ -33,6 +39,8 @@ YOLO_CONFIDENCE_THRESHOLD = 0.25
 PH_TIMEZONE = ZoneInfo("Asia/Manila")
 CAPTURE_DIR = os.path.join(BASE_DIR, "assets", "captures")
 LATEST_CAPTURE_PATH = os.path.join(CAPTURE_DIR, "latest.json")
+SERIAL_PORT = os.environ.get("AZOLLASENSE_SERIAL_PORT", "").strip()
+SERIAL_BAUD = int(os.environ.get("AZOLLASENSE_SERIAL_BAUD", "115200"))
 
 app = Flask(__name__, static_url_path="", static_folder=BASE_DIR)
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -50,6 +58,7 @@ state = {
         "green_cov": 0.0,
         "brown_cov": 0.0,
         "total_cov": 0.0,
+        "lux": None,
     },
     "ai_vision_enabled": True,
     "stream_active": False,
@@ -58,7 +67,94 @@ state = {
     "model": None,
     "model_status": "not loaded",
     "last_capture_date": None,
+    "actuators": {"motor": False, "solenoid": False, "pump": False, "pump_manual": False,
+                  "canopy_auto": True, "device_connected": False},
 }
+
+serial_lock = threading.Lock()
+serial_device = None
+
+
+def find_serial_port():
+    """Use AZOLLASENSE_SERIAL_PORT when set; otherwise pick a likely USB serial device."""
+    if SERIAL_PORT:
+        return SERIAL_PORT
+    ports = list(list_ports.comports())
+    candidates = [p.device for p in ports if any(k in (p.description or "").lower()
+                  for k in ("esp32", "usb serial", "usb jtag", "cp210", "ch340", "uart"))]
+    if candidates:
+        return candidates[0]
+    if os.name != "nt":
+        for candidate in ("/dev/ttyACM0", "/dev/ttyUSB0"):
+            if os.path.exists(candidate):
+                return candidate
+    return None
+
+
+def send_device_command(command):
+    """Write one JSON command line to the ESP32 serial link."""
+    global serial_device
+    with serial_lock:
+        if serial_device is None or not serial_device.is_open:
+            return False
+        try:
+            serial_device.write((json.dumps(command) + "\n").encode("utf-8"))
+            return True
+        except (serial.SerialException, OSError) as exc:
+            print(f"[SERIAL] Write failed: {exc}")
+            return False
+
+
+def serial_reader_thread():
+    """Read ESP32 JSON telemetry and keep the existing dashboard state current."""
+    global serial_device
+    while True:
+        try:
+            if serial_device is None or not serial_device.is_open:
+                port = find_serial_port()
+                if not port:
+                    time.sleep(3)
+                    continue
+                serial_device = serial.Serial(port, SERIAL_BAUD, timeout=1)
+                time.sleep(2)  # allow ESP32 to restart after USB serial opens
+                print(f"[SERIAL] Connected to ESP32 on {port}")
+            line = serial_device.readline().decode("utf-8", errors="ignore").strip()
+            if not line:
+                continue
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError:
+                print(f"[SERIAL] Ignoring non-JSON line: {line[:120]}")
+                continue
+            if message.get("type") == "telemetry":
+                with state_lock:
+                    for key in ("water_level", "temperature", "ph", "lux"):
+                        value = message.get(key)
+                        if isinstance(value, (int, float)):
+                            state["telemetry"][key] = round(value, 2)
+                    for key in ("solenoid", "pump", "pump_manual", "canopy_auto"):
+                        if key in message:
+                            state["actuators"][key] = bool(message[key])
+                    if "canopy_deployed" in message:
+                        state["actuators"]["motor"] = bool(message["canopy_deployed"])
+                    state["actuators"]["device_connected"] = True
+                    payload = dict(state["telemetry"])
+                    actuators = dict(state["actuators"])
+                socketio.emit("telemetry_update", payload)
+                socketio.emit("actuator_update", actuators)
+        except (serial.SerialException, OSError) as exc:
+            print(f"[SERIAL] Disconnected: {exc}")
+            with serial_lock:
+                try:
+                    if serial_device:
+                        serial_device.close()
+                except Exception:
+                    pass
+                serial_device = None
+            with state_lock:
+                state["actuators"]["device_connected"] = False
+            socketio.emit("actuator_update", dict(state["actuators"]))
+            time.sleep(2)
 
 
 def load_model():
@@ -81,26 +177,59 @@ def load_model():
 # ---------------------------------------------------------------------------
 
 def open_camera():
-    """Open the USB camera, trying platform-appropriate backends in order."""
-    backends = [
-        cv2.CAP_V4L2,                               # Linux
-        getattr(cv2, "CAP_MSMF", cv2.CAP_ANY),    # Windows
-        getattr(cv2, "CAP_DSHOW", cv2.CAP_ANY),   # Windows (DirectShow)
-        cv2.CAP_ANY,
-    ]
-    for backend in backends:
-        capture = cv2.VideoCapture(0, backend)
-        if capture.isOpened():
-            capture.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_SIZE)
-            capture.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_SIZE)
-            print(f"[CAMERA] Opened USB webcam with backend {backend}")
-            return capture
-        capture.release()
-    return None
+    """Start the Raspberry Pi Camera using the native Picamera2 interface."""
+    if Picamera2 is None:
+        print("[CAMERA] Picamera2 is unavailable. Install it with: sudo apt install python3-picamera2")
+        return None
+    camera = None
+    try:
+        camera = Picamera2()
+        config = camera.create_video_configuration(
+            main={"size": (FRAME_SIZE, FRAME_SIZE), "format": "BGR888"}
+        )
+        camera.configure(config)
+        camera.start()
+        print("[CAMERA] Raspberry Pi Camera started with Picamera2")
+        return PiCameraCapture(camera)
+    except Exception as exc:
+        print(f"[CAMERA] Could not start Raspberry Pi Camera: {exc}")
+        if camera is not None:
+            try:
+                camera.stop()
+                camera.close()
+            except Exception:
+                pass
+        return None
+
+
+class PiCameraCapture:
+    """Small VideoCapture-compatible wrapper around Picamera2."""
+
+    def __init__(self, camera):
+        self.camera = camera
+        self.closed = False
+
+    def read(self):
+        if self.closed:
+            return False, None
+        try:
+            return True, self.camera.capture_array()
+        except Exception as exc:
+            print(f"[CAMERA] Frame capture failed: {exc}")
+            return False, None
+
+    def release(self):
+        if self.closed:
+            return
+        self.closed = True
+        try:
+            self.camera.stop()
+        finally:
+            self.camera.close()
 
 
 def release_camera():
-    """Stop the stream and release the USB camera."""
+    """Stop the stream and release the Raspberry Pi Camera."""
     with state_lock:
         state["stream_active"] = False
         camera = state["camera"]
@@ -110,11 +239,11 @@ def release_camera():
             camera.release()
         except Exception:
             pass
-        print("[CAMERA] USB webcam released.")
+        print("[CAMERA] Raspberry Pi Camera released.")
 
 
 def center_crop_square(frame):
-    """Many webcams ignore the requested resolution — crop to a centered square."""
+    """Center-crop any non-square camera frame before resizing it."""
     height, width = frame.shape[:2]
     side = min(height, width)
     top = (height - side) // 2
@@ -255,10 +384,10 @@ def generate_camera_stream():
         if state["camera"] is None:
             state["camera"] = open_camera()
         if state["camera"] is None:
-            print("[CAMERA] ERROR: could not open any camera backend.")
+            print("[CAMERA] ERROR: could not start the Raspberry Pi Camera.")
             release_camera()  # clears the stream reservation
             return
-        print("[CAMERA] USB webcam streaming.")
+        print("[CAMERA] Raspberry Pi Camera streaming.")
 
     camera = state["camera"]
     frame_period = 1.0 / MAX_FPS
@@ -354,6 +483,28 @@ def handle_toggle_vision(data):
     return {"success": True, "enabled": enabled}
 
 
+@socketio.on("connect")
+def send_initial_device_state():
+    with state_lock:
+        socketio.emit("actuator_update", dict(state["actuators"]), to=request.sid)
+
+
+@socketio.on("set_actuator")
+def handle_set_actuator(data):
+    """Request a manual output state or switch canopy control mode."""
+    data = data or {}
+    name = data.get("name")
+    if name not in ("motor", "solenoid", "pump", "canopy_auto"):
+        return {"success": False, "error": "Unknown actuator"}
+    command = {name: bool(data.get("enabled"))}
+    if not send_device_command(command):
+        return {"success": False, "error": "ESP32 serial device is offline"}
+    if name != "canopy_auto":
+        with state_lock:
+            state["actuators"]["pump_manual" if name == "pump" else name] = bool(data.get("enabled"))
+    return {"success": True, "pending": True}
+
+
 # ---------------------------------------------------------------------------
 # HTTP routes
 # ---------------------------------------------------------------------------
@@ -369,7 +520,7 @@ def video_feed():
         if state["capture_in_progress"]:
             return jsonify({"error": "image capture in progress"}), 409
         if state["stream_active"]:
-            # Only one MJPEG consumer may hold the USB camera at a time
+            # Only one MJPEG consumer may hold the camera at a time
             return jsonify({"error": "camera stream already active"}), 503
         state["stream_active"] = True
 
@@ -396,6 +547,7 @@ def health():
             "ai_vision": state["ai_vision_enabled"],
             "streaming": state["stream_active"],
             "telemetry": dict(state["telemetry"]),
+            "actuators": dict(state["actuators"]),
         })
 
 
@@ -435,6 +587,7 @@ def handle_shutdown(signum, _frame):
 if __name__ == "__main__":
     load_model()
     threading.Thread(target=sensor_thread, daemon=True).start()
+    threading.Thread(target=serial_reader_thread, daemon=True).start()
     threading.Thread(target=capture_scheduler_thread, daemon=True).start()
 
     signal.signal(signal.SIGINT, handle_shutdown)
