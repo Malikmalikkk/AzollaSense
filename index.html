@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://cdn.socket.io" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./css/style.css?v=13">
+  <link rel="stylesheet" href="./css/style.css?v=14">
 </head>
 
 <body>
@@ -624,22 +624,29 @@
               <div class="settings-card-list">
                 <div class="setting-row-card">
                   <div class="setting-left-side">
-                    <span class="setting-label">Max Temperature Limit</span>
+                    <span class="setting-label">Max Temperature Alert (C)</span>
                   </div>
-                  <span class="setting-status-text">34.0°C</span>
+                  <input class="config-input" data-setting="temperature_max_c" type="number" min="0" max="80" step="0.5" aria-label="Maximum temperature alert">
                 </div>
                 <div class="setting-row-card">
                   <div class="setting-left-side">
                     <span class="setting-label">Optimal pH Range</span>
                   </div>
-                  <span class="setting-status-text">6.5 - 7.5</span>
+                  <div class="config-input-pair"><input class="config-input" data-setting="ph_min" type="number" min="0" max="14" step="0.1" aria-label="Minimum pH"><span>to</span><input class="config-input" data-setting="ph_max" type="number" min="0" max="14" step="0.1" aria-label="Maximum pH"></div>
                 </div>
                 <div class="setting-row-card">
                   <div class="setting-left-side">
-                    <span class="setting-label">Water Depth Safety Margin</span>
+                    <span class="setting-label">Safe Water Level (cm)</span>
                   </div>
-                  <span class="setting-status-text">20 - 30 cm</span>
+                  <div class="config-input-pair"><input class="config-input" data-setting="water_min_cm" type="number" min="0" max="500" step="0.5" aria-label="Minimum safe water level"><span>to</span><input class="config-input" data-setting="water_max_cm" type="number" min="0" max="500" step="0.5" aria-label="Maximum safe water level"></div>
                 </div>
+                <div class="setting-row-card"><span class="setting-label">Pump target / stop margin (cm)</span><div class="config-input-pair"><input class="config-input" data-setting="pump_target_cm" type="number" min="0" max="500" step="0.5" aria-label="Pump refill target"><span>+</span><input class="config-input" data-setting="pump_hysteresis_cm" type="number" min="0.1" max="100" step="0.5" aria-label="Pump stop margin"></div></div>
+                <div class="setting-row-card"><span class="setting-label">Canopy deploy / release (lx)</span><div class="config-input-pair"><input class="config-input" data-setting="canopy_deploy_lux" type="number" min="0" max="200000" step="500" aria-label="Canopy deploy threshold"><span>/</span><input class="config-input" data-setting="canopy_release_lux" type="number" min="0" max="200000" step="500" aria-label="Canopy release threshold"></div></div>
+                <div class="setting-row-card"><span class="setting-label">Browning alert (%)</span><input class="config-input" data-setting="browning_alert_pct" type="number" min="0" max="100" step="0.5" aria-label="Browning alert threshold"></div>
+                <h3 class="settings-group-title">Sensor Calibration</h3>
+                <div class="setting-row-card"><span class="setting-label">pH 7 / pH 4 buffer voltage (V)</span><div class="config-input-pair"><input class="config-input" data-setting="ph7_voltage" type="number" min="0" max="3.3" step="0.001" aria-label="Voltage in pH 7 buffer"><span>/</span><input class="config-input" data-setting="ph4_voltage" type="number" min="0" max="3.3" step="0.001" aria-label="Voltage in pH 4 buffer"></div></div>
+                <div class="setting-row-card"><span class="setting-label">Empty tank depth / correction (cm)</span><div class="config-input-pair"><input class="config-input" data-setting="tank_depth_cm" type="number" min="1" max="500" step="0.5" aria-label="Empty tank sensor distance to bottom"><span>+</span><input class="config-input" data-setting="water_level_offset_cm" type="number" min="-100" max="100" step="0.5" aria-label="Water level calibration correction"></div></div>
+                <p class="setting-help-text">Calibrate pH with stable readings in pH 7 and pH 4 buffer solutions. For water level, measure sensor to tank bottom with the tank empty; use correction for installation offset.</p>
                 <div class="setting-row-card">
                   <div class="setting-left-side"><span class="setting-label">Current light intensity</span></div>
                   <span class="setting-status-text val-lux">— lx</span>
@@ -855,7 +862,7 @@
 
   <!-- Application Scripts -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" defer></script>
-  <script src="./js/app.js?v=17" defer></script>
+  <script src="./js/app.js?v=18" defer></script>
   <script>
     // Register Service Worker for PWA
     if ('serviceWorker' in navigator) {

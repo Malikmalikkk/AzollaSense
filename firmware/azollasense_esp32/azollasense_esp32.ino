@@ -33,17 +33,18 @@ constexpr int PUMP_RELAY_PIN = 14;
 
 // Many optocoupler relay boards are active-low. Verify your board before use.
 constexpr bool RELAY_ACTIVE_LOW = true;
-constexpr float TANK_DEPTH_CM = 50.0f;       // sensor face to pond bottom
-constexpr float TARGET_WATER_LEVEL_CM = 25.0f;
-constexpr float PUMP_STOP_HYSTERESIS_CM = 2.0f;
-constexpr float CANOPY_DEPLOY_LUX = 45000.0f;
-constexpr float CANOPY_RELEASE_LUX = 35000.0f;
 constexpr uint32_t TELEMETRY_INTERVAL_MS = 2000;
 constexpr uint32_t MOTOR_TRAVEL_MS = 8000;  // tune for full canopy travel; add limit switches
 
 // Calibrate using known pH buffer solutions. Default is only a starting point.
-constexpr float PH_NEUTRAL_VOLTAGE = 2.50f;
-constexpr float PH_SLOPE_PER_VOLT = -5.70f;
+float tankDepthCm = 50.0f;
+float waterLevelOffsetCm = 0.0f;
+float targetWaterLevelCm = 25.0f;
+float pumpStopHysteresisCm = 2.0f;
+float canopyDeployLux = 45000.0f;
+float canopyReleaseLux = 35000.0f;
+float ph7Voltage = 2.50f;
+float ph4Voltage = 3.026f;
 
 Adafruit_TSL2591 tsl = Adafruit_TSL2591(2591);
 OneWire oneWire(ONE_WIRE_PIN);
@@ -112,7 +113,7 @@ float readPh() {
   }
   const float adc = sum / 16.0f;
   const float volts = (adc / 4095.0f) * 3.3f;
-  return 7.0f + (volts - PH_NEUTRAL_VOLTAGE) * PH_SLOPE_PER_VOLT;
+  return 7.0f + (volts - ph7Voltage) * (4.0f - 7.0f) / (ph4Voltage - ph7Voltage);
 }
 
 float readWaterDistanceCm() {
@@ -145,11 +146,22 @@ void sendTelemetry(float waterLevel, float temperature, float ph, float lux) {
 }
 
 void processCommand(const String& line) {
-  StaticJsonDocument<192> doc;
+  StaticJsonDocument<768> doc;
   if (deserializeJson(doc, line)) return;
   const bool restoringState = doc["type"] == "restore_state";
-  if (!controllerReady && !restoringState) return;
   if (restoringState) controllerReady = true;
+
+  if (doc.containsKey("tank_depth_cm")) tankDepthCm = constrain(doc["tank_depth_cm"].as<float>(), 1.0f, 500.0f);
+  if (doc.containsKey("water_level_offset_cm")) waterLevelOffsetCm = constrain(doc["water_level_offset_cm"].as<float>(), -100.0f, 100.0f);
+  if (doc.containsKey("pump_target_cm")) targetWaterLevelCm = constrain(doc["pump_target_cm"].as<float>(), 0.0f, 500.0f);
+  if (doc.containsKey("pump_hysteresis_cm")) pumpStopHysteresisCm = constrain(doc["pump_hysteresis_cm"].as<float>(), 0.1f, 100.0f);
+  if (doc.containsKey("canopy_deploy_lux")) canopyDeployLux = constrain(doc["canopy_deploy_lux"].as<float>(), 0.0f, 200000.0f);
+  if (doc.containsKey("canopy_release_lux")) canopyReleaseLux = constrain(doc["canopy_release_lux"].as<float>(), 0.0f, 200000.0f);
+  if (doc.containsKey("ph7_voltage")) ph7Voltage = constrain(doc["ph7_voltage"].as<float>(), 0.0f, 3.3f);
+  if (doc.containsKey("ph4_voltage")) ph4Voltage = constrain(doc["ph4_voltage"].as<float>(), 0.0f, 3.3f);
+  if (fabsf(ph4Voltage - ph7Voltage) < 0.05f) ph4Voltage = ph7Voltage + (ph7Voltage <= 3.25f ? 0.05f : -0.05f);
+
+  if (!controllerReady && !restoringState) return;
 
   if (doc.containsKey("canopy_auto")) {
     canopyAuto = doc["canopy_auto"].as<bool>();
@@ -169,7 +181,7 @@ void readSerialCommands() {
     if (c == '\n') {
       processCommand(inputLine);
       inputLine = "";
-    } else if (c != '\r' && inputLine.length() < 256) {
+    } else if (c != '\r' && inputLine.length() < 768) {
       inputLine += c;
     }
   }
@@ -213,8 +225,8 @@ void loop() {
   if (measuredLux >= 0 && isfinite(measuredLux)) lux = measuredLux;
 
   if (controllerReady && canopyAuto && isfinite(lux)) {
-    if (lux >= CANOPY_DEPLOY_LUX && !canopyDeployed && !motorOutput) moveCanopy(true);
-    if (lux <= CANOPY_RELEASE_LUX && canopyDeployed && !motorOutput) moveCanopy(false);
+    if (lux >= canopyDeployLux && !canopyDeployed && !motorOutput) moveCanopy(true);
+    if (lux <= canopyReleaseLux && canopyDeployed && !motorOutput) moveCanopy(false);
   }
   const bool closedLimit = digitalRead(CANOPY_CLOSED_LIMIT_PIN) == HIGH;
   const bool openLimit = digitalRead(CANOPY_OPEN_LIMIT_PIN) == HIGH;
@@ -232,14 +244,14 @@ void loop() {
   }
 
   const float distance = readWaterDistanceCm();
-  const float waterLevel = isfinite(distance) ? TANK_DEPTH_CM - distance : NAN;
+  const float waterLevel = isfinite(distance) ? tankDepthCm - distance + waterLevelOffsetCm : NAN;
   waterTemp.requestTemperatures();
   const float temperature = waterTemp.getTempCByIndex(0);
   const float ph = readPh();
 
   if (controllerReady && pumpAutoEnabled && isfinite(waterLevel) && !solenoidOn) {
-    if (!pumpAutoRunning && waterLevel <= TARGET_WATER_LEVEL_CM) pumpAutoRunning = true;
-    if (pumpAutoRunning && waterLevel >= TARGET_WATER_LEVEL_CM + PUMP_STOP_HYSTERESIS_CM)
+    if (!pumpAutoRunning && waterLevel <= targetWaterLevelCm) pumpAutoRunning = true;
+    if (pumpAutoRunning && waterLevel >= targetWaterLevelCm + pumpStopHysteresisCm)
       pumpAutoRunning = false;
   } else {
     pumpAutoRunning = false;

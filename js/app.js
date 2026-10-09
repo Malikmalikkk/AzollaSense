@@ -73,6 +73,20 @@
 
   let streamRunning = false;
   let aiVisionOn = true;
+  let sensorSettings = {};
+
+  function applySensorSettings(settings) {
+    sensorSettings = { ...sensorSettings, ...settings };
+    qsa("[data-setting]").forEach((input) => {
+      const value = sensorSettings[input.dataset.setting];
+      if (value !== undefined && document.activeElement !== input) input.value = value;
+    });
+  }
+
+  fetch(backendUrl("/api/settings"), { cache: "no-store" })
+    .then((response) => response.ok ? response.json() : Promise.reject(new Error("Could not load sensor settings.")))
+    .then(applySensorSettings)
+    .catch((error) => console.warn(error.message));
 
   /* ------------------------------------------------------------------ */
   /* Toast notifications                                                */
@@ -291,7 +305,7 @@
       if (meter) meter.setAttribute("aria-valuenow", String(Math.min(Math.round(lux), 60000)));
       if (meterFill) meterFill.style.width = `${Math.min(lux / 60000 * 100, 100)}%`;
       if (lightStatus) {
-        lightStatus.textContent = lux >= 45000
+        lightStatus.textContent = lux >= (sensorSettings.canopy_deploy_lux ?? 45000)
           ? "Canopy deploy threshold reached"
           : "Below canopy deploy threshold";
       }
@@ -300,7 +314,7 @@
 
     qsa(".val-browning-sectors").forEach((el) => {
       const brownPct = Number(data.brown_cov) || 0;
-      if (brownPct > 5.0) {
+      if (brownPct >= (sensorSettings.browning_alert_pct ?? 10)) {
         el.textContent = `Browning Detected: ${brownPct}%`;
         el.style.color = "#e65100";
       } else {
@@ -315,7 +329,10 @@
       const ph = Number(data.ph) || 7;
       const brownPct = Number(data.brown_cov) || 0;
       badgeText.textContent =
-        temp > 37.0 || ph < 6.0 || brownPct > 10.0
+        temp > (sensorSettings.temperature_max_c ?? 34) ||
+        ph < (sensorSettings.ph_min ?? 6.5) || ph > (sensorSettings.ph_max ?? 7.5) ||
+        brownPct >= (sensorSettings.browning_alert_pct ?? 10) ||
+        (data.water_level !== undefined && (data.water_level < (sensorSettings.water_min_cm ?? 20) || data.water_level > (sensorSettings.water_max_cm ?? 30)))
           ? "System Alert: Action Required"
           : "System Status";
     }
@@ -355,6 +372,8 @@
     }
   });
 
+  socket.on("sensor_settings", applySensorSettings);
+
 
   /* ------------------------------------------------------------------ */
   /* Settings screen                                                    */
@@ -388,7 +407,26 @@
 
   const saveSettingsBtn = byId("save-settings-btn");
   if (saveSettingsBtn) {
-    saveSettingsBtn.addEventListener("click", () => showToast("✓ Settings updated successfully"));
+    saveSettingsBtn.addEventListener("click", async () => {
+      const settings = {};
+      let valid = true;
+      qsa("[data-setting]").forEach((input) => {
+        const value = Number(input.value);
+        if (!input.value.trim() || !Number.isFinite(value) || !input.checkValidity()) {
+          input.setAttribute("aria-invalid", "true"); valid = false;
+        } else { input.removeAttribute("aria-invalid"); settings[input.dataset.setting] = value; }
+      });
+      if (!valid) return showToast("Check the highlighted settings values.");
+      saveSettingsBtn.disabled = true;
+      try {
+        const response = await fetch(backendUrl("/api/settings"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error(result.error || "Could not save settings.");
+        applySensorSettings(result.settings);
+        showToast(result.device_updated ? "Settings saved and sent to the ESP32." : "Settings saved. ESP32 will receive them when it reconnects.");
+      } catch (error) { showToast(error.message || "Could not save settings."); }
+      finally { saveSettingsBtn.disabled = false; }
+    });
   }
 
   /* ------------------------------------------------------------------ */

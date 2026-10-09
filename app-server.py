@@ -7,6 +7,7 @@ segmentation for browning detection and relays telemetry to every connected clie
 
 import os
 import json
+import math
 import signal
 import threading
 import time
@@ -82,6 +83,56 @@ device_preferences = {
 }
 DEVICE_PREFERENCES_PATH = os.path.join(app.instance_path, "actuator_preferences.json")
 preferences_write_lock = threading.Lock()
+
+SENSOR_SETTINGS_DEFAULTS = {
+    "temperature_max_c": 34.0,
+    "ph_min": 6.5,
+    "ph_max": 7.5,
+    "water_min_cm": 20.0,
+    "water_max_cm": 30.0,
+    "pump_target_cm": 25.0,
+    "pump_hysteresis_cm": 2.0,
+    "canopy_deploy_lux": 45000.0,
+    "canopy_release_lux": 35000.0,
+    "browning_alert_pct": 10.0,
+    "ph7_voltage": 2.5,
+    "ph4_voltage": 3.026,
+    "tank_depth_cm": 50.0,
+    "water_level_offset_cm": 0.0,
+}
+SENSOR_SETTINGS_PATH = os.path.join(app.instance_path, "sensor_settings.json")
+settings_lock = threading.RLock()
+sensor_settings = dict(SENSOR_SETTINGS_DEFAULTS)
+
+
+def load_sensor_settings():
+    try:
+        with open(SENSOR_SETTINGS_PATH, "r", encoding="utf-8") as settings_file:
+            saved = json.load(settings_file)
+    except (OSError, json.JSONDecodeError):
+        saved = {}
+    if not isinstance(saved, dict):
+        saved = {}
+    with settings_lock:
+        for key, default in SENSOR_SETTINGS_DEFAULTS.items():
+            value = saved.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                sensor_settings[key] = float(value)
+
+
+def save_sensor_settings():
+    with settings_lock:
+        saved = dict(sensor_settings)
+    os.makedirs(os.path.dirname(SENSOR_SETTINGS_PATH), exist_ok=True)
+    temp_path = SENSOR_SETTINGS_PATH + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as settings_file:
+        json.dump(saved, settings_file, indent=2)
+        settings_file.flush()
+        os.fsync(settings_file.fileno())
+    os.replace(temp_path, SENSOR_SETTINGS_PATH)
+
+
+load_sensor_settings()
 
 
 def load_device_preferences():
@@ -176,6 +227,8 @@ def serial_reader_thread():
                         "canopy_auto": restored["canopy_auto"],
                         "solenoid": False,
                     }
+                    with settings_lock:
+                        restore_command.update(sensor_settings)
                     if not restored["canopy_auto"]:
                         restore_command["motor"] = restored["motor"]
                     serial_device.write((json.dumps(restore_command) + "\n").encode("utf-8"))
@@ -551,6 +604,8 @@ def handle_toggle_vision(data):
 def send_initial_device_state():
     with state_lock:
         socketio.emit("actuator_update", dict(state["actuators"]), to=request.sid)
+    with settings_lock:
+        socketio.emit("sensor_settings", dict(sensor_settings), to=request.sid)
 
 
 @socketio.on("set_actuator")
@@ -641,6 +696,61 @@ def health():
 def api_telemetry():
     with state_lock:
         return jsonify(dict(state["telemetry"]))
+
+
+@app.route("/api/settings", methods=["GET", "POST"])
+def api_settings():
+    if request.method == "GET":
+        with settings_lock:
+            return jsonify(dict(sensor_settings))
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"success": False, "error": "Expected a settings object."}), 400
+    updated = {}
+    for key, default in SENSOR_SETTINGS_DEFAULTS.items():
+        value = data.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            return jsonify({"success": False, "error": f"{key} must be numeric."}), 400
+        value = float(value)
+        limits = {
+            "temperature_max_c": (0, 80), "ph_min": (0, 14), "ph_max": (0, 14),
+            "water_min_cm": (0, 500), "water_max_cm": (0, 500),
+            "pump_target_cm": (0, 500), "pump_hysteresis_cm": (0.1, 100),
+            "canopy_deploy_lux": (0, 200000), "canopy_release_lux": (0, 200000),
+            "browning_alert_pct": (0, 100), "ph7_voltage": (0, 3.3),
+            "ph4_voltage": (0, 3.3), "tank_depth_cm": (1, 500),
+            "water_level_offset_cm": (-100, 100),
+        }[key]
+        if not limits[0] <= value <= limits[1]:
+            return jsonify({"success": False, "error": f"{key} is out of range."}), 400
+        updated[key] = value
+
+    if updated["ph_min"] >= updated["ph_max"] or updated["water_min_cm"] >= updated["water_max_cm"]:
+        return jsonify({"success": False, "error": "Minimum thresholds must be lower than maximum thresholds."}), 400
+    if updated["canopy_release_lux"] >= updated["canopy_deploy_lux"]:
+        return jsonify({"success": False, "error": "Canopy release light must be lower than deploy light."}), 400
+    if abs(updated["ph4_voltage"] - updated["ph7_voltage"]) < 0.05:
+        return jsonify({"success": False, "error": "pH buffer voltages must differ by at least 0.05 V."}), 400
+    if updated["pump_target_cm"] + updated["pump_hysteresis_cm"] > updated["tank_depth_cm"] + updated["water_level_offset_cm"]:
+        return jsonify({"success": False, "error": "Pump target and stop margin must fit within the calibrated tank depth."}), 400
+
+    with settings_lock:
+        previous = dict(sensor_settings)
+        sensor_settings.update(updated)
+    try:
+        save_sensor_settings()
+    except OSError as exc:
+        with settings_lock:
+            sensor_settings.clear()
+            sensor_settings.update(previous)
+        print(f"[SETTINGS] Could not persist sensor settings: {exc}")
+        return jsonify({"success": False, "error": "Could not save settings on the Raspberry Pi."}), 500
+
+    command = {"type": "config", **updated}
+    sent = send_device_command(command)
+    socketio.emit("sensor_settings", updated)
+    return jsonify({"success": True, "settings": updated, "device_updated": sent})
 
 
 @app.route("/api/browning/latest")

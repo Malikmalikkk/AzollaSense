@@ -1151,6 +1151,56 @@ body::before {
   background: #ffffff;
 }
 
+.config-input-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.config-input {
+  width: 92px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid #c9dbcd;
+  border-radius: 10px;
+  background: #fbfdfb;
+  color: var(--text-primary);
+  font: 700 14px var(--font-main);
+  text-align: right;
+}
+
+.config-input:focus {
+  outline: 2px solid rgba(73, 155, 98, 0.35);
+  border-color: var(--primary-leaf);
+}
+
+.config-input[aria-invalid="true"] {
+  border-color: #c62828;
+  background: #fff7f7;
+}
+
+.setting-help-text {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 4px 6px;
+}
+
+@media (max-width: 560px) {
+  .setting-row-card:has(.config-input-pair) {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .config-input-pair {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
 .setting-left-side {
   display: flex;
   align-items: center;

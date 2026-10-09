@@ -4,8 +4,9 @@
 
 1. In Arduino IDE, select an ESP32 Dev Module and install Adafruit TSL2591,
    Adafruit Unified Sensor, OneWire, DallasTemperature, and ArduinoJson.
-2. Open `azollasense_esp32.ino`, set the tank depth, motor travel time, relay
-   polarity, and thresholds for your actual installation, then upload it.
+2. Open `azollasense_esp32.ino`, check GPIOs, motor travel time, and relay
+   polarity for your hardware, then upload it. Sensor thresholds and calibration
+   are saved from the webapp after this serial-config capable sketch is installed.
 3. Install the Python requirements for the web backend, including `pyserial`.
    Close Arduino Serial Monitor before starting the backend; only one program can
    own the ESP32 serial port at a time.
@@ -15,8 +16,15 @@
 5. Run `python app-server.py`. Open Settings → Machine Settings for the controls.
 
 The Raspberry Pi saves pump/canopy switch preferences in Flask's `instance`
-directory (`instance/actuator_preferences.json`). On an ESP32 reconnect, the Pi
-sends those saved settings before the ESP32 enables automatic or manual outputs.
+directory (`instance/actuator_preferences.json`) and sensor thresholds and
+calibration in `instance/sensor_settings.json`. Settings → Sensor Settings can
+change temperature, pH, water-level, canopy-light, browning, pump, pH calibration,
+and ultrasonic depth values. Saving sends the supported live controls and sensor
+calibration over serial; settings are also restored when the ESP32 reconnects.
+The pH voltage fields are the measured stable voltages in pH 7 and pH 4 buffer
+solutions. The water-level depth is the empty-tank distance from sensor face to
+bottom; correction adds to the calculated level. A firmware update is required
+once to add this serial configuration protocol to an older ESP32 sketch.
 The ESP32 boots with pump and canopy automation disabled and outputs off until
 it receives this restore command. The solenoid always starts OFF for safety.
 
@@ -85,15 +93,16 @@ ESP32 or its 5 V logic header. Size the supply, wiring, fuse, and driver for
 the motor's stall current; the board's advertised peak-current figure is not a
 continuous-current rating.
 
-## Defaults that need calibration
+## Sensor calibration and thresholds
 
-- `TANK_DEPTH_CM` is the distance from the ultrasonic sensor face to the pond
-  bottom. The sketch reports water level as tank depth minus measured air gap.
-- Pump auto-fill starts at or below `TARGET_WATER_LEVEL_CM` and stops at the
-  target plus `PUMP_STOP_HYSTERESIS_CM`. Adjust these to your required level.
-- The pH voltage equation is only a placeholder. Calibrate the PH-4502C using
-  pH buffer solutions and verify the interface output never exceeds the ESP32
-  ADC input range. Do not connect a bare pH probe to the ESP32.
+- Sensor Settings stores the empty-tank sensor-to-bottom distance and an
+  installation correction. Water level is calculated as depth minus measured
+  air gap plus the correction.
+- Pump auto-fill starts at or below its configured target and stops at the
+  target plus the configured margin.
+- Calibrate pH using stable PH-4502C output voltages measured in pH 7 and pH 4
+  buffer solutions. Verify the interface output never exceeds the ESP32 ADC
+  input range. Do not connect a bare pH probe to the ESP32.
 - JSN-SR04T Echo may be 5 V; level shift it before the ESP32 input. The sketch
   assumes a 4.7 kΩ DS18B20 data pull-up to 3.3 V.
 - Canopy limit switches stop normal travel at each endpoint; `MOTOR_TRAVEL_MS`
