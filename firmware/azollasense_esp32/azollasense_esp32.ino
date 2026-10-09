@@ -33,7 +33,6 @@ constexpr int PUMP_RELAY_PIN = 14;
 
 // Many optocoupler relay boards are active-low. Verify your board before use.
 constexpr bool RELAY_ACTIVE_LOW = true;
-constexpr uint32_t TELEMETRY_INTERVAL_MS = 2000;
 constexpr uint32_t MOTOR_TRAVEL_MS = 8000;  // tune for full canopy travel; add limit switches
 
 // Calibrate using known pH buffer solutions. Default is only a starting point.
@@ -45,6 +44,7 @@ float canopyDeployLux = 45000.0f;
 float canopyReleaseLux = 35000.0f;
 float ph7Voltage = 2.50f;
 float ph4Voltage = 3.026f;
+uint32_t telemetryIntervalMs = 2000;
 
 Adafruit_TSL2591 tsl = Adafruit_TSL2591(2591);
 OneWire oneWire(ONE_WIRE_PIN);
@@ -159,6 +159,7 @@ void processCommand(const String& line) {
   if (doc.containsKey("canopy_release_lux")) canopyReleaseLux = constrain(doc["canopy_release_lux"].as<float>(), 0.0f, 200000.0f);
   if (doc.containsKey("ph7_voltage")) ph7Voltage = constrain(doc["ph7_voltage"].as<float>(), 0.0f, 3.3f);
   if (doc.containsKey("ph4_voltage")) ph4Voltage = constrain(doc["ph4_voltage"].as<float>(), 0.0f, 3.3f);
+  if (doc.containsKey("update_interval_seconds")) telemetryIntervalMs = constrain(doc["update_interval_seconds"].as<uint32_t>(), 2U, 3600U) * 1000UL;
   if (fabsf(ph4Voltage - ph7Voltage) < 0.05f) ph4Voltage = ph7Voltage + (ph7Voltage <= 3.25f ? 0.05f : -0.05f);
 
   if (!controllerReady && !restoringState) return;
@@ -262,7 +263,7 @@ void loop() {
   setRelay(SOLENOID_RELAY_PIN, solenoidOn);
   setRelay(PUMP_RELAY_PIN, pumpOutput);
 
-  if (now - lastTelemetryAt >= TELEMETRY_INTERVAL_MS) {
+  if (now - lastTelemetryAt >= telemetryIntervalMs) {
     lastTelemetryAt = now;
     sendTelemetry(waterLevel, temperature, ph, lux);
   }

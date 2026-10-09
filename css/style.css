@@ -1171,6 +1171,33 @@ body::before {
   text-align: right;
 }
 
+.setting-select {
+  max-width: 150px;
+  padding: 9px 30px 9px 10px;
+  border: 1px solid #c9dbcd;
+  border-radius: 10px;
+  background: #fbfdfb;
+  color: var(--text-primary);
+  font: 700 13px var(--font-main);
+  cursor: pointer;
+}
+
+.sensor-update-meta {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 2px 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.last-sensor-update {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
 .config-input:focus {
   outline: 2px solid rgba(73, 155, 98, 0.35);
   border-color: var(--primary-leaf);

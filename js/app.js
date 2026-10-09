@@ -88,6 +88,43 @@
     .then(applySensorSettings)
     .catch((error) => console.warn(error.message));
 
+  const cloudSyncStatus = byId("cloud-sync-status");
+  const cloudSyncBadge = byId("cloud-sync-badge");
+  function isLocalHostname(hostname) {
+    const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".lan") || host.endsWith(".internal") || host.endsWith(".home") || host.endsWith(".home.arpa") || host === "::1" || host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) return true;
+    if (host.includes(":")) return false;
+    const octets = host.split(".").map(Number);
+    if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return !host.includes(".");
+    return octets[0] === 10 || octets[0] === 127 || octets[0] === 0 ||
+      (octets[0] === 169 && octets[1] === 254) ||
+      (octets[0] === 192 && octets[1] === 168) ||
+      (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+      (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127);
+  }
+
+  async function refreshCloudSyncStatus() {
+    if (!cloudSyncStatus) return;
+    const publicHost = !isLocalHostname(window.location.hostname);
+    let connected = false;
+    if (publicHost && navigator.onLine) {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 5000);
+      try {
+        const response = await fetch(backendUrl("/health"), { cache: "no-store", signal: controller.signal });
+        connected = response.ok;
+      } catch (_) { connected = false; }
+      finally { window.clearTimeout(timeout); }
+    }
+    cloudSyncStatus.textContent = connected ? "Connected" : "Disconnected";
+    cloudSyncStatus.title = connected ? "The app is being served from an online host." : "The app is available locally only, or the online service is unreachable.";
+    if (cloudSyncBadge) cloudSyncBadge.classList.toggle("is-hidden", !connected);
+  }
+  refreshCloudSyncStatus();
+  window.addEventListener("online", refreshCloudSyncStatus);
+  window.addEventListener("offline", refreshCloudSyncStatus);
+  window.setInterval(refreshCloudSyncStatus, 30000);
+
   /* ------------------------------------------------------------------ */
   /* Toast notifications                                                */
   /* ------------------------------------------------------------------ */
@@ -292,6 +329,17 @@
 
   socket.on("telemetry_update", (data) => {
     const setValues = (selector, text) => qsa(selector).forEach((el) => { el.textContent = text; });
+
+    if (data.sensor_updated_at) {
+      const updatedAt = new Date(data.sensor_updated_at);
+      if (!Number.isNaN(updatedAt.getTime())) {
+        const formatted = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" }).format(updatedAt);
+        qsa(".last-sensor-update").forEach((el) => {
+          el.textContent = formatted;
+          el.dateTime = updatedAt.toISOString();
+        });
+      }
+    }
 
     if (data.water_level !== undefined) setValues(".val-water", `${data.water_level} cm`);
     if (data.temperature !== undefined) setValues(".val-temp", `${data.temperature}°C`);

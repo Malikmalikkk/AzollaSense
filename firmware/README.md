@@ -21,6 +21,8 @@ calibration in `instance/sensor_settings.json`. Settings → Sensor Settings can
 change temperature, pH, water-level, canopy-light, browning, pump, pH calibration,
 and ultrasonic depth values. Saving sends the supported live controls and sensor
 calibration over serial; settings are also restored when the ESP32 reconnects.
+The Update Interval setting controls how often the ESP32 sends sensor readings
+to the app, from 2 seconds up to 1 hour.
 The pH voltage fields are the measured stable voltages in pH 7 and pH 4 buffer
 solutions. The water-level depth is the empty-tank distance from sensor face to
 bottom; correction adds to the calculated level. A firmware update is required

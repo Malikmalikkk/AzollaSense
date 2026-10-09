@@ -60,6 +60,7 @@ state = {
         "brown_cov": 0.0,
         "total_cov": 0.0,
         "lux": None,
+        "sensor_updated_at": None,
     },
     "ai_vision_enabled": True,
     "stream_active": False,
@@ -85,6 +86,7 @@ DEVICE_PREFERENCES_PATH = os.path.join(app.instance_path, "actuator_preferences.
 preferences_write_lock = threading.Lock()
 
 SENSOR_SETTINGS_DEFAULTS = {
+    "update_interval_seconds": 2,
     "temperature_max_c": 34.0,
     "ph_min": 6.5,
     "ph_max": 7.5,
@@ -254,6 +256,7 @@ def serial_reader_thread():
                     if "canopy_deployed" in message:
                         state["actuators"]["motor"] = bool(message["canopy_deployed"])
                     state["actuators"]["device_connected"] = True
+                    state["telemetry"]["sensor_updated_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
                     payload = dict(state["telemetry"])
                     actuators = dict(state["actuators"])
                 socketio.emit("telemetry_update", payload)
@@ -714,6 +717,7 @@ def api_settings():
             return jsonify({"success": False, "error": f"{key} must be numeric."}), 400
         value = float(value)
         limits = {
+            "update_interval_seconds": (2, 3600),
             "temperature_max_c": (0, 80), "ph_min": (0, 14), "ph_max": (0, 14),
             "water_min_cm": (0, 500), "water_max_cm": (0, 500),
             "pump_target_cm": (0, 500), "pump_hysteresis_cm": (0.1, 100),
@@ -725,6 +729,9 @@ def api_settings():
         if not limits[0] <= value <= limits[1]:
             return jsonify({"success": False, "error": f"{key} is out of range."}), 400
         updated[key] = value
+
+    if updated["update_interval_seconds"] not in (2, 5, 10, 30, 60, 300, 600, 1800, 3600):
+        return jsonify({"success": False, "error": "Choose a supported sensor update interval."}), 400
 
     if updated["ph_min"] >= updated["ph_max"] or updated["water_min_cm"] >= updated["water_max_cm"]:
         return jsonify({"success": False, "error": "Minimum thresholds must be lower than maximum thresholds."}), 400
