@@ -1631,11 +1631,13 @@ input:checked+.slider-knob::before {
 
   .tank-feed-card {
     max-width: none;
+    aspect-ratio: 16 / 9;
+    max-height: min(48vh, 500px);
   }
 
   .tank-image-wrapper {
-    min-height: 320px;
-    max-height: min(52vh, 560px);
+    min-height: 0;
+    max-height: none;
   }
 
   .telemetry-grid {
