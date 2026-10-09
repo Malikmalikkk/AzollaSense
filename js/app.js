@@ -282,7 +282,20 @@
     if (data.water_level !== undefined) setValues(".val-water", `${data.water_level} cm`);
     if (data.temperature !== undefined) setValues(".val-temp", `${data.temperature}°C`);
     if (data.ph !== undefined) setValues(".val-ph", `${data.ph}`);
-    if (data.lux !== undefined && data.lux !== null) setValues(".val-lux", `${Math.round(data.lux)} lx`);
+    if (data.lux !== undefined && data.lux !== null && Number.isFinite(Number(data.lux))) {
+      const lux = Math.max(0, Number(data.lux));
+      setValues(".val-lux", `${Math.round(lux).toLocaleString()} lx`);
+      const meter = qs(".light-meter-track");
+      const meterFill = qs(".light-meter-fill");
+      const lightStatus = qs(".light-intensity-status");
+      if (meter) meter.setAttribute("aria-valuenow", String(Math.min(Math.round(lux), 60000)));
+      if (meterFill) meterFill.style.width = `${Math.min(lux / 60000 * 100, 100)}%`;
+      if (lightStatus) {
+        lightStatus.textContent = lux >= 45000
+          ? "Canopy deploy threshold reached"
+          : "Below canopy deploy threshold";
+      }
+    }
     if (data.total_cov !== undefined) setValues(".val-cov", `${data.total_cov}%`);
 
     qsa(".val-browning-sectors").forEach((el) => {

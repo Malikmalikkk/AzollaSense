@@ -212,6 +212,30 @@
 
           </div>
 
+          <section class="light-intensity-card" aria-labelledby="light-intensity-title">
+            <div class="light-intensity-heading">
+              <div class="light-intensity-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                  <circle cx="12" cy="12" r="4" />
+                  <path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" />
+                </svg>
+              </div>
+              <div>
+                <h3 id="light-intensity-title">Light Intensity</h3>
+                <p>Live reading from the TSL2591 sensor</p>
+              </div>
+              <strong class="light-intensity-value val-lux">— lx</strong>
+            </div>
+            <div class="light-meter-track" role="progressbar" aria-label="Current light intensity" aria-valuemin="0" aria-valuemax="60000" aria-valuenow="0">
+              <div class="light-meter-fill"></div>
+              <span class="light-meter-threshold" aria-hidden="true"></span>
+            </div>
+            <div class="light-intensity-footer">
+              <span class="light-intensity-status">Waiting for sensor data</span>
+              <span>Canopy trigger: 45,000 lx</span>
+            </div>
+          </section>
+
           <!-- Browning Detection Section -->
           <div class="section-title-row">
             <svg class="section-icon-svg" viewBox="0 0 24 24">

@@ -664,6 +664,98 @@ body::before {
   color: var(--cov-text);
 }
 
+.light-intensity-card {
+  margin: -4px 0 20px;
+  padding: 16px;
+  border: 1px solid #f0dfa5;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #fffbea 0%, #fff4c9 100%);
+  color: #684d08;
+  box-shadow: var(--shadow-sm);
+}
+
+.light-intensity-heading {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 15px;
+}
+
+.light-intensity-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  border-radius: 13px;
+  background: #ffe89a;
+  color: #ad7800;
+}
+
+.light-intensity-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.light-intensity-heading h3 {
+  margin: 0 0 3px;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.light-intensity-heading p {
+  margin: 0;
+  color: #8b7747;
+  font-size: 11px;
+}
+
+.light-intensity-value {
+  margin-left: auto;
+  font-family: var(--font-brand);
+  font-size: 21px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.light-meter-track {
+  position: relative;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #f0e5c4;
+}
+
+.light-meter-fill {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #f6ca50 0%, #f29b38 100%);
+  transition: width 350ms ease;
+}
+
+.light-meter-threshold {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: 75%;
+  width: 2px;
+  background: #684d08;
+}
+
+.light-intensity-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 9px;
+  color: #8b7747;
+  font-size: 10px;
+}
+
+.light-intensity-status {
+  color: #684d08;
+  font-weight: 700;
+}
+
 .sensor-icon-box {
   width: 46px;
   height: 46px;
