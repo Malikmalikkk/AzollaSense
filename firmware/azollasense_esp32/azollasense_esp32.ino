@@ -53,6 +53,7 @@ bool canopyAuto = true;
 bool canopyDeployed = false;
 bool solenoidOn = false;
 bool pumpManualRequest = false;
+bool pumpAutoEnabled = true;
 bool pumpAutoRunning = false;
 bool motorOutput = false;
 bool motorDirectionDeploy = true;
@@ -136,6 +137,7 @@ void sendTelemetry(float waterLevel, float temperature, float ph, float lux) {
   doc["solenoid"] = solenoidOn;
   doc["pump"] = pumpOutput;
   doc["pump_manual"] = pumpManualRequest;
+  doc["pump_auto"] = pumpAutoEnabled;
   doc["canopy_auto"] = canopyAuto;
   serializeJson(doc, Serial);
   Serial.println();
@@ -154,6 +156,7 @@ void processCommand(const String& line) {
   }
   if (doc.containsKey("solenoid")) solenoidOn = doc["solenoid"].as<bool>();
   if (doc.containsKey("pump")) pumpManualRequest = doc["pump"].as<bool>();
+  if (doc.containsKey("pump_auto")) pumpAutoEnabled = doc["pump_auto"].as<bool>();
 }
 
 void readSerialCommands() {
@@ -230,7 +233,7 @@ void loop() {
   const float temperature = waterTemp.getTempCByIndex(0);
   const float ph = readPh();
 
-  if (isfinite(waterLevel) && !solenoidOn) {
+  if (pumpAutoEnabled && isfinite(waterLevel) && !solenoidOn) {
     if (!pumpAutoRunning && waterLevel <= TARGET_WATER_LEVEL_CM) pumpAutoRunning = true;
     if (pumpAutoRunning && waterLevel >= TARGET_WATER_LEVEL_CM + PUMP_STOP_HYSTERESIS_CM)
       pumpAutoRunning = false;

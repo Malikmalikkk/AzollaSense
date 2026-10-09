@@ -313,6 +313,7 @@
     motor: byId("motor-switch"),
     solenoid: byId("solenoid-switch"),
     pump: byId("pump-switch"),
+    pump_auto: byId("pump-auto-switch"),
     canopy_auto: byId("canopy-auto-switch")
   };
   Object.entries(actuatorInputs).forEach(([name, input]) => {

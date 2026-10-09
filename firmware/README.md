@@ -19,7 +19,7 @@
 ESP32 telemetry is one JSON object per line, for example:
 
 ```json
-{"type":"telemetry","water_level":24.8,"temperature":27.1,"ph":7.0,"lux":46200,"motor":true,"solenoid":false,"pump":true,"pump_manual":false,"canopy_auto":true}
+{"type":"telemetry","water_level":24.8,"temperature":27.1,"ph":7.0,"lux":46200,"motor":true,"solenoid":false,"pump":true,"pump_manual":false,"pump_auto":true,"canopy_auto":true}
 ```
 
 The backend parses that line, updates its shared telemetry state, and its
@@ -96,6 +96,9 @@ continuous-current rating.
 - The pump manual switch requests pump ON; switching it off removes that request
   while automatic low-water filling remains enabled. The pump is forced off
   while the harvest drain solenoid is open.
+- The Machine Settings screen has a separate automatic pump switch. Turning it
+  off disables water-level-triggered pumping; the manual pump request remains
+  available. Turning it back on resumes the configured water-level logic.
 
 All relay outputs and HW-039 enables start OFF. Confirm relay-board active level
 and load ratings with low-voltage test loads before connecting the pond hardware.

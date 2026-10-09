@@ -667,6 +667,13 @@
                   </label>
                 </div>
                 <div class="setting-row-card">
+                  <div class="setting-left-side"><span class="setting-label">Automatic pump by water level</span></div>
+                  <label class="switch-control" aria-label="Automatic pump control">
+                    <input id="pump-auto-switch" type="checkbox" checked>
+                    <span class="slider-knob"></span>
+                  </label>
+                </div>
+                <div class="setting-row-card">
                   <div class="setting-left-side"><span class="setting-label">Pump manual run request (auto fill remains active)</span></div>
                   <label class="switch-control" aria-label="Manual pump run request">
                     <input id="pump-switch" type="checkbox">
@@ -824,7 +831,7 @@
 
   <!-- Application Scripts -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" defer></script>
-  <script src="./js/app.js?v=15" defer></script>
+  <script src="./js/app.js?v=16" defer></script>
   <script>
     // Register Service Worker for PWA
     if ('serviceWorker' in navigator) {

@@ -68,6 +68,7 @@ state = {
     "model_status": "not loaded",
     "last_capture_date": None,
     "actuators": {"motor": False, "solenoid": False, "pump": False, "pump_manual": False,
+                  "pump_auto": True,
                   "canopy_auto": True, "device_connected": False},
 }
 
@@ -132,7 +133,7 @@ def serial_reader_thread():
                         value = message.get(key)
                         if isinstance(value, (int, float)):
                             state["telemetry"][key] = round(value, 2)
-                    for key in ("solenoid", "pump", "pump_manual", "canopy_auto"):
+                    for key in ("solenoid", "pump", "pump_manual", "pump_auto", "canopy_auto"):
                         if key in message:
                             state["actuators"][key] = bool(message[key])
                     if "canopy_deployed" in message:
@@ -494,7 +495,7 @@ def handle_set_actuator(data):
     """Request a manual output state or switch canopy control mode."""
     data = data or {}
     name = data.get("name")
-    if name not in ("motor", "solenoid", "pump", "canopy_auto"):
+    if name not in ("motor", "solenoid", "pump", "pump_auto", "canopy_auto"):
         return {"success": False, "error": "Unknown actuator"}
     command = {name: bool(data.get("enabled"))}
     if not send_device_command(command):
