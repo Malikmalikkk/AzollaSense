@@ -56,6 +56,7 @@ state = {
         "water_level": 26.0,
         "temperature": 31.5,
         "ph": 7.2,
+        "ph_voltage": None,
         "green_cov": 0.0,
         "brown_cov": 0.0,
         "total_cov": 0.0,
@@ -246,7 +247,7 @@ def serial_reader_thread():
                 continue
             if message.get("type") == "telemetry":
                 with state_lock:
-                    for key in ("water_level", "temperature", "ph", "lux"):
+                    for key in ("water_level", "temperature", "ph", "ph_voltage", "lux"):
                         value = message.get(key)
                         if isinstance(value, (int, float)):
                             state["telemetry"][key] = round(value, 2)

@@ -104,7 +104,7 @@ void moveCanopy(bool deployed) {
   motorStartedAt = millis();
 }
 
-float readPh() {
+float readPh(float* measuredVoltage = nullptr) {
   // Average analog samples; calibrate this conversion for your own interface.
   uint32_t sum = 0;
   for (int i = 0; i < 16; ++i) {
@@ -113,6 +113,7 @@ float readPh() {
   }
   const float adc = sum / 16.0f;
   const float volts = (adc / 4095.0f) * 3.3f;
+  if (measuredVoltage) *measuredVoltage = volts;
   return 7.0f + (volts - ph7Voltage) * (4.0f - 7.0f) / (ph4Voltage - ph7Voltage);
 }
 
@@ -127,12 +128,13 @@ float readWaterDistanceCm() {
   return duration * 0.0343f / 2.0f;
 }
 
-void sendTelemetry(float waterLevel, float temperature, float ph, float lux) {
+void sendTelemetry(float waterLevel, float temperature, float ph, float phVoltage, float lux) {
   StaticJsonDocument<384> doc;
   doc["type"] = "telemetry";
   if (isfinite(waterLevel)) doc["water_level"] = waterLevel;
   if (isfinite(temperature)) doc["temperature"] = temperature;
   if (isfinite(ph)) doc["ph"] = ph;
+  if (isfinite(phVoltage)) doc["ph_voltage"] = phVoltage;
   if (isfinite(lux)) doc["lux"] = lux;
   doc["motor"] = motorOutput;
   doc["canopy_deployed"] = canopyDeployed;
@@ -248,7 +250,8 @@ void loop() {
   const float waterLevel = isfinite(distance) ? tankDepthCm - distance + waterLevelOffsetCm : NAN;
   waterTemp.requestTemperatures();
   const float temperature = waterTemp.getTempCByIndex(0);
-  const float ph = readPh();
+  float phVoltage = NAN;
+  const float ph = readPh(&phVoltage);
 
   if (controllerReady && pumpAutoEnabled && isfinite(waterLevel) && !solenoidOn) {
     if (!pumpAutoRunning && waterLevel <= targetWaterLevelCm) pumpAutoRunning = true;
@@ -265,7 +268,7 @@ void loop() {
 
   if (now - lastTelemetryAt >= telemetryIntervalMs) {
     lastTelemetryAt = now;
-    sendTelemetry(waterLevel, temperature, ph, lux);
+    sendTelemetry(waterLevel, temperature, ph, phVoltage, lux);
   }
   delay(20);
 }

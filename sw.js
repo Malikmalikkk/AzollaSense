@@ -5,7 +5,7 @@
  * with an offline fallback to the app shell.
  */
 
-const CACHE_NAME = "azollasense-v7";
+const CACHE_NAME = "azollasense-v8";
 const APP_BASE = new URL("./", self.registration.scope);
 const appPath = (path) => new URL(path.replace(/^\//, ""), APP_BASE).href;
 

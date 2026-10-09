@@ -344,6 +344,9 @@
     if (data.water_level !== undefined) setValues(".val-water", `${data.water_level} cm`);
     if (data.temperature !== undefined) setValues(".val-temp", `${data.temperature}°C`);
     if (data.ph !== undefined) setValues(".val-ph", `${data.ph}`);
+    if (data.ph_voltage !== undefined && data.ph_voltage !== null) {
+      setValues(".val-ph-voltage", `${Number(data.ph_voltage).toFixed(3)} V`);
+    }
     if (data.lux !== undefined && data.lux !== null && Number.isFinite(Number(data.lux))) {
       const lux = Math.max(0, Number(data.lux));
       setValues(".val-lux", `${Math.round(lux).toLocaleString()} lx`);
