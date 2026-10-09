@@ -1491,3 +1491,175 @@ input:checked+.slider-knob::before {
     display: none;
   }
 }
+
+/* Desktop application shell */
+@media (min-width: 900px) {
+  html,
+  body {
+    height: 100%;
+    min-height: 100%;
+    overflow: hidden;
+    background: #f3f7f3;
+  }
+
+  body::before {
+    display: none;
+  }
+
+  .app-viewport {
+    height: 100vh;
+    min-height: 640px;
+    justify-content: stretch;
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .app-screen {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: #f5f8f5;
+    display: grid;
+    grid-template-columns: 248px minmax(0, 1fr);
+    grid-template-rows: 76px minmax(0, 1fr);
+  }
+
+  .main-header {
+    position: relative;
+    grid-column: 1 / -1;
+    grid-row: 1;
+    height: 76px;
+    padding: 0 36px 0 32px;
+    background: #fff;
+    border-bottom-color: #e5ece6;
+  }
+
+  .brand-text {
+    font-size: 27px;
+  }
+
+  .screen-scroll-container {
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 0;
+    padding: 34px clamp(28px, 4vw, 64px) 48px;
+    scrollbar-width: thin;
+  }
+
+  .bottom-nav-bar {
+    position: relative;
+    grid-column: 1;
+    grid-row: 2;
+    height: auto;
+    min-height: 0;
+    padding: 28px 18px;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 8px;
+    background: #fff;
+    border-top: 0;
+    border-right: 1px solid #e5ece6;
+    backdrop-filter: none;
+  }
+
+  .bottom-nav-bar::before {
+    content: "FARM WORKSPACE";
+    margin: 4px 12px 12px;
+    color: #819486;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.2px;
+  }
+
+  .nav-tab-btn {
+    min-height: 52px;
+    width: 100%;
+    padding: 0 14px;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    border-radius: 12px;
+    text-align: left;
+  }
+
+  .nav-tab-btn:hover {
+    transform: none;
+    background: #f3f8f4;
+  }
+
+  .nav-tab-btn.active {
+    background: #eaf5ec;
+    color: #205c32;
+  }
+
+  .nav-icon-box {
+    width: 30px;
+    height: 30px;
+    margin: 0;
+    flex: 0 0 30px;
+  }
+
+  .nav-icon-box svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .nav-label {
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .nav-tab-btn::after {
+    display: none;
+  }
+
+  .nav-divider {
+    display: none;
+  }
+
+  .sub-heading-row {
+    margin-bottom: 24px;
+  }
+
+  .page-title {
+    font-size: clamp(28px, 2.3vw, 36px);
+  }
+
+  .tank-feed-card {
+    max-width: none;
+  }
+
+  .tank-image-wrapper {
+    min-height: 320px;
+    max-height: min(52vh, 560px);
+  }
+
+  .telemetry-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 18px;
+  }
+
+  .tab-panel {
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+}
+
+@media (min-width: 900px) and (max-width: 1150px) {
+  .app-screen {
+    grid-template-columns: 210px minmax(0, 1fr);
+  }
+
+  .screen-scroll-container {
+    padding-right: 28px;
+    padding-left: 28px;
+  }
+
+  .telemetry-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
