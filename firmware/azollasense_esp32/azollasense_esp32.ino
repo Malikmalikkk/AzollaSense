@@ -49,11 +49,12 @@ Adafruit_TSL2591 tsl = Adafruit_TSL2591(2591);
 OneWire oneWire(ONE_WIRE_PIN);
 DallasTemperature waterTemp(&oneWire);
 
-bool canopyAuto = true;
+bool controllerReady = false;
+bool canopyAuto = false;
 bool canopyDeployed = false;
 bool solenoidOn = false;
 bool pumpManualRequest = false;
-bool pumpAutoEnabled = true;
+bool pumpAutoEnabled = false;
 bool pumpAutoRunning = false;
 bool motorOutput = false;
 bool motorDirectionDeploy = true;
@@ -146,12 +147,15 @@ void sendTelemetry(float waterLevel, float temperature, float ph, float lux) {
 void processCommand(const String& line) {
   StaticJsonDocument<192> doc;
   if (deserializeJson(doc, line)) return;
+  const bool restoringState = doc["type"] == "restore_state";
+  if (!controllerReady && !restoringState) return;
+  if (restoringState) controllerReady = true;
 
   if (doc.containsKey("canopy_auto")) {
     canopyAuto = doc["canopy_auto"].as<bool>();
   }
   if (doc.containsKey("motor")) {
-    canopyAuto = false;
+    if (!restoringState) canopyAuto = false;
     moveCanopy(doc["motor"].as<bool>());
   }
   if (doc.containsKey("solenoid")) solenoidOn = doc["solenoid"].as<bool>();
@@ -208,7 +212,7 @@ void loop() {
   const float measuredLux = tsl.calculateLux(visible, ir);
   if (measuredLux >= 0 && isfinite(measuredLux)) lux = measuredLux;
 
-  if (canopyAuto && isfinite(lux)) {
+  if (controllerReady && canopyAuto && isfinite(lux)) {
     if (lux >= CANOPY_DEPLOY_LUX && !canopyDeployed && !motorOutput) moveCanopy(true);
     if (lux <= CANOPY_RELEASE_LUX && canopyDeployed && !motorOutput) moveCanopy(false);
   }
@@ -233,7 +237,7 @@ void loop() {
   const float temperature = waterTemp.getTempCByIndex(0);
   const float ph = readPh();
 
-  if (pumpAutoEnabled && isfinite(waterLevel) && !solenoidOn) {
+  if (controllerReady && pumpAutoEnabled && isfinite(waterLevel) && !solenoidOn) {
     if (!pumpAutoRunning && waterLevel <= TARGET_WATER_LEVEL_CM) pumpAutoRunning = true;
     if (pumpAutoRunning && waterLevel >= TARGET_WATER_LEVEL_CM + PUMP_STOP_HYSTERESIS_CM)
       pumpAutoRunning = false;
@@ -241,7 +245,7 @@ void loop() {
     pumpAutoRunning = false;
   }
 
-  pumpOutput = !solenoidOn && (pumpManualRequest || pumpAutoRunning);
+  pumpOutput = controllerReady && !solenoidOn && (pumpManualRequest || pumpAutoRunning);
   setMotorDriver(motorOutput, motorDirectionDeploy);
   setRelay(SOLENOID_RELAY_PIN, solenoidOn);
   setRelay(PUMP_RELAY_PIN, pumpOutput);

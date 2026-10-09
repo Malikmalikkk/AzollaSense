@@ -14,6 +14,12 @@
    `COM5` on Windows) and optionally `AZOLLASENSE_SERIAL_BAUD=115200`.
 5. Run `python app-server.py`. Open Settings → Machine Settings for the controls.
 
+The Raspberry Pi saves pump/canopy switch preferences in Flask's `instance`
+directory (`instance/actuator_preferences.json`). On an ESP32 reconnect, the Pi
+sends those saved settings before the ESP32 enables automatic or manual outputs.
+The ESP32 boots with pump and canopy automation disabled and outputs off until
+it receives this restore command. The solenoid always starts OFF for safety.
+
 ## Serial protocol
 
 ESP32 telemetry is one JSON object per line, for example:

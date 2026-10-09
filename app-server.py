@@ -68,12 +68,58 @@ state = {
     "model_status": "not loaded",
     "last_capture_date": None,
     "actuators": {"motor": False, "solenoid": False, "pump": False, "pump_manual": False,
-                  "pump_auto": True,
-                  "canopy_auto": True, "device_connected": False},
+                  "pump_auto": False, "canopy_auto": False, "device_connected": False},
 }
 
 serial_lock = threading.Lock()
 serial_device = None
+serial_ready = False
+device_preferences = {
+    "motor": False,
+    "pump_manual": False,
+    "pump_auto": False,
+    "canopy_auto": False,
+}
+DEVICE_PREFERENCES_PATH = os.path.join(app.instance_path, "actuator_preferences.json")
+preferences_write_lock = threading.Lock()
+
+
+def load_device_preferences():
+    """Restore persisted mode and manual switch values from the Pi's instance directory."""
+    try:
+        with open(DEVICE_PREFERENCES_PATH, "r", encoding="utf-8") as preferences_file:
+            saved = json.load(preferences_file)
+    except (OSError, json.JSONDecodeError):
+        saved = {}
+    if not isinstance(saved, dict):
+        saved = {}
+    with state_lock:
+        for key in device_preferences:
+            if isinstance(saved.get(key), bool):
+                device_preferences[key] = saved[key]
+        state["actuators"].update({
+            "motor": device_preferences["motor"],
+            "pump_manual": device_preferences["pump_manual"],
+            "pump_auto": device_preferences["pump_auto"],
+            "canopy_auto": device_preferences["canopy_auto"],
+        })
+
+
+def save_device_preferences():
+    """Atomically persist switch states so a Pi or ESP32 restart keeps them."""
+    with preferences_write_lock:
+        with state_lock:
+            saved = dict(device_preferences)
+        os.makedirs(os.path.dirname(DEVICE_PREFERENCES_PATH), exist_ok=True)
+        temp_path = DEVICE_PREFERENCES_PATH + ".tmp"
+        with open(temp_path, "w", encoding="utf-8") as preferences_file:
+            json.dump(saved, preferences_file)
+            preferences_file.flush()
+            os.fsync(preferences_file.fileno())
+        os.replace(temp_path, DEVICE_PREFERENCES_PATH)
+
+
+load_device_preferences()
 
 
 def find_serial_port():
@@ -96,7 +142,7 @@ def send_device_command(command):
     """Write one JSON command line to the ESP32 serial link."""
     global serial_device
     with serial_lock:
-        if serial_device is None or not serial_device.is_open:
+        if not serial_ready or serial_device is None or not serial_device.is_open:
             return False
         try:
             serial_device.write((json.dumps(command) + "\n").encode("utf-8"))
@@ -108,7 +154,7 @@ def send_device_command(command):
 
 def serial_reader_thread():
     """Read ESP32 JSON telemetry and keep the existing dashboard state current."""
-    global serial_device
+    global serial_device, serial_ready
     while True:
         try:
             if serial_device is None or not serial_device.is_open:
@@ -117,7 +163,23 @@ def serial_reader_thread():
                     time.sleep(3)
                     continue
                 serial_device = serial.Serial(port, SERIAL_BAUD, timeout=1)
+                serial_ready = False
                 time.sleep(2)  # allow ESP32 to restart after USB serial opens
+                with serial_lock:
+                    with state_lock:
+                        restored = dict(device_preferences)
+                    # Automatic mode follows the ESP32's end-stop reading at boot.
+                    restore_command = {
+                        "type": "restore_state",
+                        "pump_auto": restored["pump_auto"],
+                        "pump": restored["pump_manual"],
+                        "canopy_auto": restored["canopy_auto"],
+                        "solenoid": False,
+                    }
+                    if not restored["canopy_auto"]:
+                        restore_command["motor"] = restored["motor"]
+                    serial_device.write((json.dumps(restore_command) + "\n").encode("utf-8"))
+                    serial_ready = True
                 print(f"[SERIAL] Connected to ESP32 on {port}")
             line = serial_device.readline().decode("utf-8", errors="ignore").strip()
             if not line:
@@ -152,6 +214,7 @@ def serial_reader_thread():
                 except Exception:
                     pass
                 serial_device = None
+                serial_ready = False
             with state_lock:
                 state["actuators"]["device_connected"] = False
             socketio.emit("actuator_update", dict(state["actuators"]))
@@ -497,13 +560,35 @@ def handle_set_actuator(data):
     name = data.get("name")
     if name not in ("motor", "solenoid", "pump", "pump_auto", "canopy_auto"):
         return {"success": False, "error": "Unknown actuator"}
-    command = {name: bool(data.get("enabled"))}
-    if not send_device_command(command):
-        return {"success": False, "error": "ESP32 serial device is offline"}
-    if name != "canopy_auto":
+    enabled = bool(data.get("enabled"))
+    command = {name: enabled}
+    preference_key = {"pump": "pump_manual"}.get(name, name)
+    if preference_key in device_preferences:
         with state_lock:
-            state["actuators"]["pump_manual" if name == "pump" else name] = bool(data.get("enabled"))
-    return {"success": True, "pending": True}
+            previous_preferences = dict(device_preferences)
+            previous_actuators = dict(state["actuators"])
+            device_preferences[preference_key] = enabled
+            if name == "motor":
+                # Manual canopy movement takes control away from lux automation.
+                device_preferences["canopy_auto"] = False
+                state["actuators"]["canopy_auto"] = False
+            state["actuators"][preference_key] = enabled
+            if name == "motor":
+                state["actuators"]["motor"] = enabled
+        try:
+            save_device_preferences()
+        except OSError as exc:
+            print(f"[STATE] Could not persist actuator preferences: {exc}")
+            with state_lock:
+                device_preferences.update(previous_preferences)
+                state["actuators"].update(previous_actuators)
+            return {"success": False, "error": "Could not save the switch state on the Raspberry Pi"}
+    elif name == "solenoid":
+        with state_lock:
+            state["actuators"][name] = enabled
+
+    sent = send_device_command(command)
+    return {"success": True, "pending": not sent}
 
 
 # ---------------------------------------------------------------------------
