@@ -5,7 +5,7 @@
  * with an offline fallback to the app shell.
  */
 
-const CACHE_NAME = "azollasense-v10";
+const CACHE_NAME = "azollasense-v11";
 const APP_BASE = new URL("./", self.registration.scope);
 const appPath = (path) => new URL(path.replace(/^\//, ""), APP_BASE).href;
 
@@ -13,7 +13,7 @@ const CORE_ASSETS = [
   "./",
   "./index.html",
   "./login.html",
-  "./css/style.css?v=20",
+  "./css/style.css?v=21",
   "./js/app.js?v=24",
   "./js/auth.js?v=2",
   "./manifest.json",
