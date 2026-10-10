@@ -191,10 +191,11 @@ SENSOR_SETTINGS_DEFAULTS = {
     "tank_depth_cm": 50.0,
     "water_level_offset_cm": 0.0,
 }
-# Keep sensor configuration beside this backend, independent of Flask's
-# implicit instance-path rules (which can differ between launch methods).
-SENSOR_SETTINGS_PATH = os.path.join(BASE_DIR, "instance", "sensor_settings.json")
-LEGACY_SENSOR_SETTINGS_PATH = os.path.join(app.instance_path, "sensor_settings.json")
+# Keep sensor settings alongside the other persistent, device-local data.
+# Using Flask's instance directory for both reads and writes avoids choosing a
+# different settings file when the app is launched through another entry point.
+SENSOR_SETTINGS_PATH = os.path.join(app.instance_path, "sensor_settings.json")
+LEGACY_SENSOR_SETTINGS_PATH = os.path.join(BASE_DIR, "instance", "sensor_settings.json")
 settings_lock = threading.RLock()
 sensor_settings = dict(SENSOR_SETTINGS_DEFAULTS)
 
@@ -1000,7 +1001,7 @@ def api_set_actuator():
 def api_settings():
     if request.method == "GET":
         with settings_lock:
-            return jsonify(dict(sensor_settings))
+            return no_store(jsonify(dict(sensor_settings)))
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -1050,7 +1051,7 @@ def api_settings():
         return jsonify({"success": False, "error": "Could not save settings on the Raspberry Pi."}), 500
 
     socketio.emit("sensor_settings", updated)
-    return jsonify({"success": True, "settings": updated})
+    return no_store(jsonify({"success": True, "settings": updated}))
 
 
 @app.route("/api/browning/latest")
