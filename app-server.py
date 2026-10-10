@@ -392,7 +392,9 @@ def open_camera():
     try:
         camera = Picamera2()
         config = camera.create_video_configuration(
-            main={"size": (FRAME_SIZE, FRAME_SIZE), "format": "BGR888"}
+            # Picamera2's RGB888 buffer is BGR-ordered in memory on Raspberry Pi,
+            # which is the channel order OpenCV and the YOLO model expect.
+            main={"size": (FRAME_SIZE, FRAME_SIZE), "format": "RGB888"}
         )
         camera.configure(config)
         camera.start()
