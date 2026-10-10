@@ -85,14 +85,24 @@
   let streamRunning = false;
   let aiVisionOn = true;
   let sensorSettings = {};
+  const dirtySensorSettings = new Set();
 
-  function applySensorSettings(settings) {
-    sensorSettings = { ...sensorSettings, ...settings };
+  function applySensorSettings(settings, force = false) {
+    Object.entries(settings || {}).forEach(([key, value]) => {
+      if (force || !dirtySensorSettings.has(key)) sensorSettings[key] = value;
+    });
     qsa("[data-setting]").forEach((input) => {
-      const value = sensorSettings[input.dataset.setting];
-      if (value !== undefined && document.activeElement !== input) input.value = value;
+      const key = input.dataset.setting;
+      const value = sensorSettings[key];
+      if (value !== undefined && (force || !dirtySensorSettings.has(key)) && document.activeElement !== input) input.value = value;
     });
   }
+
+  qsa("[data-setting]").forEach((input) => {
+    const markDirty = () => dirtySensorSettings.add(input.dataset.setting);
+    input.addEventListener("input", markDirty);
+    input.addEventListener("change", markDirty);
+  });
 
   fetch(backendUrl("/api/settings"), { cache: "no-store" })
     .then((response) => response.ok ? response.json() : Promise.reject(new Error("Could not load sensor settings.")))
@@ -539,14 +549,19 @@
       });
       if (!valid) return showToast("Check the highlighted settings values.");
       saveSettingsBtn.disabled = true;
+      qsa("[data-setting]").forEach((input) => { input.disabled = true; });
       try {
         const response = await fetch(backendUrl("/api/settings"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
         const result = await response.json();
         if (!response.ok || !result.success) throw new Error(result.error || "Could not save settings.");
-        applySensorSettings(result.settings);
+        dirtySensorSettings.clear();
+        applySensorSettings(result.settings, true);
         showToast(result.device_updated ? "Settings saved and sent to the ESP32." : "Settings saved. ESP32 will receive them when it reconnects.");
       } catch (error) { showToast(error.message || "Could not save settings."); }
-      finally { saveSettingsBtn.disabled = false; }
+      finally {
+        qsa("[data-setting]").forEach((input) => { input.disabled = false; });
+        saveSettingsBtn.disabled = false;
+      }
     });
   }
 
