@@ -549,18 +549,24 @@
       });
       if (!valid) return showToast("Check the highlighted settings values.");
       saveSettingsBtn.disabled = true;
+      const originalLabel = saveSettingsBtn.textContent;
+      saveSettingsBtn.textContent = "Saving…";
       qsa("[data-setting]").forEach((input) => { input.disabled = true; });
       try {
-        const response = await fetch(backendUrl("/api/settings"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
+        const response = await fetch(backendUrl("/api/settings"), { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
         const result = await response.json();
         if (!response.ok || !result.success) throw new Error(result.error || "Could not save settings.");
         dirtySensorSettings.clear();
         applySensorSettings(result.settings, true);
         showToast("Settings saved on the Raspberry Pi.");
-      } catch (error) { showToast(error.message || "Could not save settings."); }
+      } catch (error) {
+        console.error("Could not save sensor settings:", error);
+        showToast(error.message || "Could not save settings.");
+      }
       finally {
         qsa("[data-setting]").forEach((input) => { input.disabled = false; });
         saveSettingsBtn.disabled = false;
+        saveSettingsBtn.textContent = originalLabel;
       }
     });
   }
