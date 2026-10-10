@@ -47,6 +47,7 @@
           </h1>
         </a>
 
+        <button id="logout-btn" class="logout-btn" type="button">Sign out</button>
         <button id="profile-btn" class="profile-btn" title="View Farm Operator Profile" aria-label="View farm operator profile">
           <svg class="profile-avatar-svg" viewBox="0 0 24 24">
             <circle cx="12" cy="12" r="10" fill="#e8f5e9" stroke="#3b7b4e" stroke-width="1.8" />
@@ -854,6 +855,15 @@
             <span class="setting-status-text" style="color: #2e7d32; font-weight: 700;">Healthy</span>
           </div>
         </div>
+        <form id="add-user-form" class="local-user-form">
+          <h4>Add a local account</h4>
+          <label for="new-user-name">Username</label>
+          <input id="new-user-name" name="username" required minlength="3" maxlength="40" autocomplete="off">
+          <label for="new-user-password">Password</label>
+          <input id="new-user-password" name="password" type="password" required minlength="10" maxlength="256" autocomplete="new-password">
+          <button type="submit">Create account</button>
+          <p id="add-user-message" role="status"></p>
+        </form>
       </div>
     </div>
   </div>
@@ -862,8 +872,7 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Application Scripts -->
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" defer></script>
-  <script src="./js/app.js?v=21" defer></script>
+  <script src="./js/app.js?v=22" defer></script>
   <script>
     // Register Service Worker for PWA
     if ('serviceWorker' in navigator) {

@@ -68,8 +68,19 @@
     });
   }
 
-  // Graceful fallback if Socket.IO is unavailable (offline PWA/static hosting).
-  const socket = typeof io === "function" ? io(backendBase) : { emit() {}, on() {} };
+  // All live traffic stays on the Pi. Polling avoids a CDN-hosted Socket.IO
+  // client dependency and keeps controls available without internet access.
+  const localSocketHandlers = {};
+  const socket = {
+    on(event, callback) { localSocketHandlers[event] = callback; },
+    emit(event, data, acknowledge) {
+      const endpoint = event === "set_actuator" ? "/api/actuator" : "/api/vision";
+      fetch(backendUrl(endpoint), { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data || {}) })
+        .then(async (response) => ({ response, result: await response.json() }))
+        .then(({ response, result }) => acknowledge?.(response.ok ? result : { success: false, error: result.error }))
+        .catch(() => acknowledge?.({ success: false, error: "Local Raspberry Pi server is unavailable." }));
+    }
+  };
 
   let streamRunning = false;
   let aiVisionOn = true;
@@ -424,6 +435,55 @@
   });
 
   socket.on("sensor_settings", applySensorSettings);
+
+  async function refreshLocalState() {
+    try {
+      const response = await fetch(backendUrl("/api/state"), { cache: "no-store", credentials: "same-origin" });
+      if (response.status === 401) { location.replace("/login"); return; }
+      if (!response.ok) throw new Error("Local server unavailable");
+      const data = await response.json();
+      localSocketHandlers.telemetry_update?.(data.telemetry);
+      localSocketHandlers.actuator_update?.(data.actuators);
+      localSocketHandlers.sensor_settings?.(data.settings);
+      if (!localSocketHandlers.connected) {
+        localSocketHandlers.connected = true;
+        localSocketHandlers.connect?.();
+      }
+    } catch (_) {
+      if (localSocketHandlers.connected) {
+        localSocketHandlers.connected = false;
+        localSocketHandlers.disconnect?.();
+      }
+    }
+  }
+  refreshLocalState();
+  window.setInterval(refreshLocalState, 1500);
+
+  const logoutButton = byId("logout-btn");
+  if (logoutButton) logoutButton.addEventListener("click", async () => {
+    logoutButton.disabled = true;
+    try {
+      await fetch(backendUrl("/api/auth/logout"), { method: "POST", credentials: "same-origin" });
+      location.replace("/login");
+    } catch (_) { logoutButton.disabled = false; showToast("Could not reach the local server."); }
+  });
+
+  const addUserForm = byId("add-user-form");
+  if (addUserForm) addUserForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const message = byId("add-user-message");
+    const formData = new FormData(addUserForm);
+    try {
+      const response = await fetch(backendUrl("/api/auth/users"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: formData.get("username"), password: formData.get("password") })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not create account.");
+      addUserForm.reset();
+      message.textContent = "Account created on this Raspberry Pi.";
+    } catch (error) { message.textContent = error.message || "Could not reach the local server."; }
+  });
 
 
   /* ------------------------------------------------------------------ */

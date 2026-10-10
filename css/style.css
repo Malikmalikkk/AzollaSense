@@ -1743,3 +1743,39 @@ input:checked+.slider-knob::before {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Local account setup and sign-in */
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(ellipse at 50% 0%, #e4f1e6 0, #f4f7f2 48%, #e9efe8 100%);
+  color: #183b24;
+  font-family: "Plus Jakarta Sans", "Segoe UI", sans-serif;
+}
+.auth-card {
+  width: min(100%, 430px);
+  padding: 38px clamp(24px, 7vw, 48px);
+  border: 1px solid #dce8dc;
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 22px 65px #1d48221c;
+}
+.auth-mark { font-size: 34px; }
+.auth-eyebrow { margin: 18px 0 8px; color: #56815d; font-size: 11px; font-weight: 800; letter-spacing: .16em; }
+.auth-card h1 { margin: 0; font-size: 32px; font-weight: 800; }
+.auth-intro { margin: 10px 0 28px; color: #65756a; line-height: 1.6; }
+.auth-card label { display: block; margin: 16px 0 7px; font-size: 13px; font-weight: 700; }
+.auth-card input { box-sizing: border-box; width: 100%; padding: 13px 14px; border: 1px solid #d3dfd4; border-radius: 10px; background: #fbfdfb; color: #183b24; font: inherit; outline-color: #388e3c; }
+.auth-error { min-height: 20px; margin: 12px 0 4px; color: #b42318; font-size: 13px; }
+.auth-submit { width: 100%; padding: 13px; border: 0; border-radius: 10px; background: #276b38; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.auth-submit:disabled { opacity: .65; cursor: wait; }
+.auth-local-note { margin: 22px 0 0; color: #718076; font-size: 12px; line-height: 1.6; text-align: center; }
+.logout-btn { padding: 8px 12px; border: 1px solid #d9e4d9; border-radius: 9px; background: #fff; color: #315b39; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.local-user-form { display: grid; gap: 8px; margin-top: 22px; padding-top: 18px; border-top: 1px solid #e5ece5; }
+.local-user-form h4 { margin: 0 0 4px; color: var(--primary-dark); }
+.local-user-form label { font-size: 12px; font-weight: 700; }
+.local-user-form input { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #d3dfd4; border-radius: 8px; font: inherit; }
+.local-user-form button { margin-top: 4px; padding: 10px; border: 0; border-radius: 8px; background: #276b38; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.local-user-form p { min-height: 18px; margin: 0; font-size: 12px; color: #315b39; }

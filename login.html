@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#194627">
+  <title>Sign in · AzollaSense</title>
+  <link rel="stylesheet" href="./css/style.css?v=17">
+</head>
+<body class="auth-page">
+  <main class="auth-card">
+    <div class="auth-mark" aria-hidden="true">🌿</div>
+    <p class="auth-eyebrow">LOCAL FARM SYSTEM</p>
+    <h1>AzollaSense</h1>
+    <p id="auth-intro" class="auth-intro">Sign in to continue to your dashboard.</p>
+    <form id="auth-form" autocomplete="on">
+      <label for="auth-username">Username</label>
+      <input id="auth-username" name="username" autocomplete="username" required minlength="3" maxlength="40">
+      <label for="auth-password">Password</label>
+      <input id="auth-password" name="password" type="password" autocomplete="current-password" required minlength="10" maxlength="256">
+      <p id="auth-error" class="auth-error" role="alert" aria-live="polite"></p>
+      <button id="auth-submit" class="auth-submit" type="submit">Sign in</button>
+    </form>
+    <p class="auth-local-note">Your account is stored on this Raspberry Pi. Internet access is not required.</p>
+  </main>
+  <script src="./js/auth.js" defer></script>
+</body>
+</html>

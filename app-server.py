@@ -8,10 +8,15 @@ segmentation for browning detection and relays telemetry to every connected clie
 import os
 import json
 import math
+import hashlib
+import hmac
+import secrets
+import sqlite3
 import signal
 import threading
 import time
-from datetime import datetime
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import cv2
@@ -20,7 +25,7 @@ try:
     from picamera2 import Picamera2
 except ImportError:
     Picamera2 = None
-from flask import Flask, Response, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory, redirect, make_response, g
 from flask_socketio import SocketIO
 from ultralytics import YOLO
 import serial
@@ -45,6 +50,87 @@ SERIAL_BAUD = int(os.environ.get("AZOLLASENSE_SERIAL_BAUD", "115200"))
 
 app = Flask(__name__, static_url_path="", static_folder=BASE_DIR)
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+# User accounts and opaque sessions live on this device. No cloud service is
+# involved in registration, login, session validation, or dashboard access.
+os.makedirs(app.instance_path, exist_ok=True)
+AUTH_DB_PATH = os.path.join(app.instance_path, "auth.sqlite3")
+SESSION_COOKIE = "azollasense_session"
+SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 7
+AUTH_DB_LOCK = threading.RLock()
+
+
+@contextmanager
+def auth_db():
+    connection = sqlite3.connect(AUTH_DB_PATH, timeout=10)
+    connection.row_factory = sqlite3.Row
+    try:
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def init_auth_db():
+    with AUTH_DB_LOCK, auth_db() as connection:
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash BLOB NOT NULL, password_salt BLOB NOT NULL, created_at TEXT NOT NULL)")
+        connection.execute("CREATE TABLE IF NOT EXISTS sessions (token_hash BLOB PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at TEXT NOT NULL)")
+        connection.execute("CREATE TABLE IF NOT EXISTS login_attempts (ip TEXT PRIMARY KEY, failures INTEGER NOT NULL, window_started REAL NOT NULL, locked_until REAL NOT NULL DEFAULT 0)")
+
+
+init_auth_db()
+if os.name != "nt":
+    os.chmod(AUTH_DB_PATH, 0o600)
+
+
+def password_digest(password, salt):
+    return hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2**14, r=8, p=1, dklen=32)
+
+
+def create_session(user_id):
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode("ascii")).digest()
+    expiry = datetime.now(timezone.utc) + timedelta(seconds=SESSION_LIFETIME_SECONDS)
+    with AUTH_DB_LOCK, auth_db() as connection:
+        connection.execute("INSERT INTO sessions(token_hash, user_id, expires_at) VALUES (?, ?, ?)", (token_hash, user_id, expiry.isoformat()))
+    return token
+
+
+@app.before_request
+def load_local_user():
+    token = request.cookies.get(SESSION_COOKIE, "")
+    g.user = None
+    if token:
+        token_hash = hashlib.sha256(token.encode("utf-8")).digest()
+        with AUTH_DB_LOCK, auth_db() as connection:
+            row = connection.execute("SELECT users.id, users.username, sessions.expires_at FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=?", (token_hash,)).fetchone()
+            if row:
+                if datetime.fromisoformat(row["expires_at"]) > datetime.now(timezone.utc):
+                    g.user = {"id": row["id"], "username": row["username"]}
+                else:
+                    connection.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash,))
+
+    path = request.path
+    public = path in ("/api/auth/status", "/api/auth/setup", "/api/auth/login", "/login") or path.startswith("/css/") or path.startswith("/js/") or path.startswith("/assets/") and not path.startswith("/assets/captures/") or path in ("/manifest.json", "/sw.js", "/favicon.ico")
+    if not public and g.user is None:
+        if path.startswith("/api/") or path in ("/video_feed", "/stop_stream"):
+            return jsonify({"error": "Authentication required."}), 401
+        return redirect("/login", code=302)
+
+
+@socketio.on("connect")
+def require_socket_login(auth=None):
+    token = request.cookies.get(SESSION_COOKIE, "")
+    if not token:
+        return False
+    token_hash = hashlib.sha256(token.encode("utf-8")).digest()
+    with AUTH_DB_LOCK, auth_db() as connection:
+        row = connection.execute("SELECT expires_at FROM sessions WHERE token_hash=?", (token_hash,)).fetchone()
+    return bool(row and datetime.fromisoformat(row["expires_at"]) > datetime.now(timezone.utc))
 
 # ---------------------------------------------------------------------------
 # Shared state — every field below is guarded by state_lock
@@ -659,6 +745,96 @@ def serve_index():
     return send_from_directory(BASE_DIR, "index.html")
 
 
+@app.route("/login")
+def serve_login():
+    if g.user:
+        return redirect("/")
+    return send_from_directory(BASE_DIR, "login.html")
+
+
+def set_session_cookie(response, token):
+    forwarded_proto = request.headers.get("X-Forwarded-Proto", "").split(",", 1)[0].strip().lower()
+    response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_LIFETIME_SECONDS,
+                        httponly=True, secure=request.is_secure or forwarded_proto == "https", samesite="Lax", path="/")
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.route("/api/auth/status")
+def auth_status():
+    with AUTH_DB_LOCK, auth_db() as connection:
+        configured = connection.execute("SELECT 1 FROM users LIMIT 1").fetchone() is not None
+    return jsonify({"configured": configured, "authenticated": bool(g.user), "username": g.user["username"] if g.user else None})
+
+
+@app.route("/api/auth/setup", methods=["POST"])
+def auth_setup():
+    data = request.get_json(silent=True) or {}
+    username, password = str(data.get("username", "")).strip(), data.get("password", "")
+    if not isinstance(password, str) or not 3 <= len(username) <= 40 or not username.replace("_", "").replace("-", "").isalnum() or len(password) < 10 or len(password) > 256:
+        return jsonify({"error": "Use a 3–40 character username and a password of at least 10 characters."}), 400
+    salt = secrets.token_bytes(16)
+    with AUTH_DB_LOCK, auth_db() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        if connection.execute("SELECT 1 FROM users LIMIT 1").fetchone():
+            return jsonify({"error": "Initial setup is already complete."}), 409
+        try:
+            cursor = connection.execute("INSERT INTO users(username,password_hash,password_salt,created_at) VALUES (?,?,?,?)", (username, password_digest(password, salt), salt, datetime.now(timezone.utc).isoformat()))
+            user_id = cursor.lastrowid
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "That username is already in use."}), 409
+    return set_session_cookie(jsonify({"success": True}), create_session(user_id))
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def auth_login():
+    data = request.get_json(silent=True) or {}
+    username, password = str(data.get("username", "")).strip(), data.get("password", "")
+    ip = request.remote_addr or "unknown"
+    now = time.time()
+    with AUTH_DB_LOCK, auth_db() as connection:
+        attempt = connection.execute("SELECT failures,window_started,locked_until FROM login_attempts WHERE ip=?", (ip,)).fetchone()
+        if attempt and attempt["locked_until"] > now:
+            return jsonify({"error": "Too many attempts. Try again in a few minutes."}), 429
+        row = connection.execute("SELECT id,password_hash,password_salt FROM users WHERE username=?", (username,)).fetchone()
+    valid = bool(row and isinstance(password, str) and len(password) <= 256 and hmac.compare_digest(password_digest(password, row["password_salt"]), row["password_hash"]))
+    with AUTH_DB_LOCK, auth_db() as connection:
+        if not valid:
+            failures = (attempt["failures"] + 1) if attempt and now - attempt["window_started"] < 900 else 1
+            locked_until = now + 900 if failures >= 8 else 0
+            connection.execute("INSERT INTO login_attempts(ip,failures,window_started,locked_until) VALUES(?,?,?,?) ON CONFLICT(ip) DO UPDATE SET failures=excluded.failures,window_started=excluded.window_started,locked_until=excluded.locked_until", (ip, failures, now if failures == 1 else attempt["window_started"], locked_until))
+            return jsonify({"error": "Username or password is incorrect."}), 401
+        connection.execute("DELETE FROM login_attempts WHERE ip=?", (ip,))
+    return set_session_cookie(jsonify({"success": True}), create_session(row["id"]))
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def auth_logout():
+    token = request.cookies.get(SESSION_COOKIE, "")
+    if token:
+        with AUTH_DB_LOCK, auth_db() as connection:
+            connection.execute("DELETE FROM sessions WHERE token_hash=?", (hashlib.sha256(token.encode("utf-8")).digest(),))
+    response = make_response(jsonify({"success": True}))
+    response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, secure=request.is_secure, samesite="Lax")
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.route("/api/auth/users", methods=["POST"])
+def auth_add_user():
+    data = request.get_json(silent=True) or {}
+    username, password = str(data.get("username", "")).strip(), data.get("password", "")
+    if not isinstance(password, str) or not 3 <= len(username) <= 40 or not username.replace("_", "").replace("-", "").isalnum() or len(password) < 10 or len(password) > 256:
+        return jsonify({"error": "Use a 3–40 character username and a password of at least 10 characters."}), 400
+    salt = secrets.token_bytes(16)
+    try:
+        with AUTH_DB_LOCK, auth_db() as connection:
+            connection.execute("INSERT INTO users(username,password_hash,password_salt,created_at) VALUES (?,?,?,?)", (username, password_digest(password, salt), salt, datetime.now(timezone.utc).isoformat()))
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "That username is already in use."}), 409
+    return jsonify({"success": True}), 201
+
+
 @app.route("/video_feed")
 def video_feed():
     with state_lock:
@@ -700,6 +876,28 @@ def health():
 def api_telemetry():
     with state_lock:
         return jsonify(dict(state["telemetry"]))
+
+
+@app.route("/api/state")
+def api_local_state():
+    with state_lock, settings_lock:
+        return jsonify({"telemetry": dict(state["telemetry"]), "actuators": dict(state["actuators"]), "settings": dict(sensor_settings)})
+
+
+@app.route("/api/vision", methods=["POST"])
+def api_set_vision():
+    data = request.get_json(silent=True) or {}
+    enabled = bool(data.get("enabled", True))
+    with state_lock:
+        state["ai_vision_enabled"] = enabled
+    return jsonify({"success": True, "enabled": enabled})
+
+
+@app.route("/api/actuator", methods=["POST"])
+def api_set_actuator():
+    data = request.get_json(silent=True) or {}
+    reply = handle_set_actuator(data)
+    return jsonify(reply), (200 if reply.get("success") else 400)
 
 
 @app.route("/api/settings", methods=["GET", "POST"])
@@ -797,6 +995,6 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
 
-    # Host on localhost port 5000 (Cloudflare will route traffic here)
-    socketio.run(app, host="127.0.0.1", port=5000, allow_unsafe_werkzeug=True)
+    # Bind to all interfaces so the dashboard remains reachable on the local LAN.
+    socketio.run(app, host="0.0.0.0", port=5000, allow_unsafe_werkzeug=True)
 

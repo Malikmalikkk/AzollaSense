@@ -5,15 +5,17 @@
  * with an offline fallback to the app shell.
  */
 
-const CACHE_NAME = "azollasense-v8";
+const CACHE_NAME = "azollasense-v9";
 const APP_BASE = new URL("./", self.registration.scope);
 const appPath = (path) => new URL(path.replace(/^\//, ""), APP_BASE).href;
 
 const CORE_ASSETS = [
   "./",
   "./index.html",
+  "./login.html",
   "./css/style.css",
   "./js/app.js",
+  "./js/auth.js",
   "./manifest.json",
   "./assets/logo.png",
   "./assets/tank.png",
@@ -64,7 +66,7 @@ self.addEventListener("fetch", (event) => {
 
   // Navigation requests: network first, fall back to the cached app shell
   if (request.mode === "navigate") {
-    event.respondWith(fetch(request).catch(() => caches.match(appPath("index.html"))));
+    event.respondWith(fetch(request).catch(() => caches.match(appPath("login.html"))));
     return;
   }
 
