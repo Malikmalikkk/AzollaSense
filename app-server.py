@@ -191,17 +191,26 @@ SENSOR_SETTINGS_DEFAULTS = {
     "tank_depth_cm": 50.0,
     "water_level_offset_cm": 0.0,
 }
-SENSOR_SETTINGS_PATH = os.path.join(app.instance_path, "sensor_settings.json")
+# Keep sensor configuration beside this backend, independent of Flask's
+# implicit instance-path rules (which can differ between launch methods).
+SENSOR_SETTINGS_PATH = os.path.join(BASE_DIR, "instance", "sensor_settings.json")
+LEGACY_SENSOR_SETTINGS_PATH = os.path.join(app.instance_path, "sensor_settings.json")
 settings_lock = threading.RLock()
 sensor_settings = dict(SENSOR_SETTINGS_DEFAULTS)
 
 
 def load_sensor_settings():
-    try:
-        with open(SENSOR_SETTINGS_PATH, "r", encoding="utf-8") as settings_file:
-            saved = json.load(settings_file)
-    except (OSError, json.JSONDecodeError):
-        saved = {}
+    saved = {}
+    candidate_paths = [SENSOR_SETTINGS_PATH]
+    if LEGACY_SENSOR_SETTINGS_PATH != SENSOR_SETTINGS_PATH:
+        candidate_paths.append(LEGACY_SENSOR_SETTINGS_PATH)
+    for settings_path in candidate_paths:
+        try:
+            with open(settings_path, "r", encoding="utf-8") as settings_file:
+                saved = json.load(settings_file)
+            break
+        except (OSError, json.JSONDecodeError):
+            continue
     if not isinstance(saved, dict):
         saved = {}
     with settings_lock:
@@ -224,6 +233,7 @@ def save_sensor_settings():
 
 
 load_sensor_settings()
+print(f"[SETTINGS] Sensor settings file: {SENSOR_SETTINGS_PATH}")
 
 
 def load_device_preferences():
