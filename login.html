@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#194627">
   <title>Sign in · AzollaSense</title>
-  <link rel="stylesheet" href="./css/style.css?v=17">
+  <link rel="stylesheet" href="./css/style.css?v=20">
 </head>
 <body class="auth-page">
   <main class="auth-card">
@@ -19,10 +19,10 @@
       <label for="auth-password">Password</label>
       <input id="auth-password" name="password" type="password" autocomplete="current-password" required minlength="10" maxlength="256">
       <p id="auth-error" class="auth-error" role="alert" aria-live="polite"></p>
-      <button id="auth-submit" class="auth-submit" type="submit">Sign in</button>
+      <button id="auth-submit" class="auth-submit" type="submit" disabled>Checking local account…</button>
     </form>
     <p class="auth-local-note">Your account is stored on this Raspberry Pi. Internet access is not required.</p>
   </main>
-  <script src="./js/auth.js" defer></script>
+  <script src="./js/auth.js?v=2" defer></script>
 </body>
 </html>

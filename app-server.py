@@ -742,21 +742,35 @@ def handle_set_actuator(data):
 
 @app.route("/")
 def serve_index():
-    return send_from_directory(BASE_DIR, "index.html")
+    return no_store(send_from_directory(BASE_DIR, "index.html"))
 
 
 @app.route("/login")
 def serve_login():
     if g.user:
         return redirect("/")
-    return send_from_directory(BASE_DIR, "login.html")
+    return no_store(send_from_directory(BASE_DIR, "login.html"))
 
 
 def set_session_cookie(response, token):
-    forwarded_proto = request.headers.get("X-Forwarded-Proto", "").split(",", 1)[0].strip().lower()
     response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_LIFETIME_SECONDS,
-                        httponly=True, secure=request.is_secure or forwarded_proto == "https", samesite="Lax", path="/")
+                        httponly=True, secure=request_is_https(), samesite="Lax", path="/")
     response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def request_is_https():
+    forwarded_proto = request.headers.get("X-Forwarded-Proto", "").split(",", 1)[0].strip().lower()
+    cf_visitor = request.headers.get("CF-Visitor", "")
+    try:
+        cf_scheme = json.loads(cf_visitor).get("scheme", "").lower()
+    except (AttributeError, TypeError, json.JSONDecodeError):
+        cf_scheme = ""
+    return request.is_secure or forwarded_proto == "https" or cf_scheme == "https"
+
+
+def no_store(response):
+    response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
 
@@ -764,7 +778,7 @@ def set_session_cookie(response, token):
 def auth_status():
     with AUTH_DB_LOCK, auth_db() as connection:
         configured = connection.execute("SELECT 1 FROM users LIMIT 1").fetchone() is not None
-    return jsonify({"configured": configured, "authenticated": bool(g.user), "username": g.user["username"] if g.user else None})
+    return no_store(jsonify({"configured": configured, "authenticated": bool(g.user), "username": g.user["username"] if g.user else None}))
 
 
 @app.route("/api/auth/setup", methods=["POST"])
@@ -815,7 +829,7 @@ def auth_logout():
         with AUTH_DB_LOCK, auth_db() as connection:
             connection.execute("DELETE FROM sessions WHERE token_hash=?", (hashlib.sha256(token.encode("utf-8")).digest(),))
     response = make_response(jsonify({"success": True}))
-    response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, secure=request.is_secure, samesite="Lax")
+    response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, secure=request_is_https(), samesite="Lax")
     response.headers["Cache-Control"] = "no-store"
     return response
 

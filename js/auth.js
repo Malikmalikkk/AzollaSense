@@ -17,8 +17,12 @@
         submit.textContent = "Create account";
         password.autocomplete = "new-password";
       }
+      submit.disabled = false;
     })
-    .catch(() => { error.textContent = "Could not reach the local AzollaSense server."; });
+    .catch(() => {
+      error.textContent = "Could not reach the local AzollaSense server. Refresh to try again.";
+      submit.disabled = true;
+    });
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
