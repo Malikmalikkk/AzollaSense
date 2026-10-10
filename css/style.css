@@ -1773,6 +1773,7 @@ input:checked+.slider-knob::before {
 .auth-submit:disabled { opacity: .65; cursor: wait; }
 .auth-local-note { margin: 22px 0 0; color: #718076; font-size: 12px; line-height: 1.6; text-align: center; }
 .logout-btn { padding: 8px 12px; border: 1px solid #d9e4d9; border-radius: 9px; background: #fff; color: #315b39; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.profile-logout-btn { width: 100%; margin-top: 18px; padding: 11px 14px; }
 .local-user-form { display: grid; gap: 8px; margin-top: 22px; padding-top: 18px; border-top: 1px solid #e5ece5; }
 .local-user-form h4 { margin: 0 0 4px; color: var(--primary-dark); }
 .local-user-form label { font-size: 12px; font-weight: 700; }

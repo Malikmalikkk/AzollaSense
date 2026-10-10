@@ -460,6 +460,16 @@
   window.setInterval(refreshLocalState, 1500);
 
   const logoutButton = byId("logout-btn");
+  fetch(backendUrl("/api/auth/status"), { cache: "no-store", credentials: "same-origin" })
+    .then((response) => response.ok ? response.json() : Promise.reject(new Error("Not signed in")))
+    .then((account) => {
+      const name = byId("profile-username");
+      const profile = byId("profile-btn");
+      if (name && account.username) name.textContent = account.username;
+      if (profile && account.username) profile.title = `Signed in as ${account.username}`;
+    })
+    .catch(() => { location.replace("/login"); });
+
   if (logoutButton) logoutButton.addEventListener("click", async () => {
     logoutButton.disabled = true;
     try {

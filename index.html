@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://cdn.socket.io" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./css/style.css?v=18">
+  <link rel="stylesheet" href="./css/style.css?v=19">
 </head>
 
 <body>
@@ -47,7 +47,6 @@
           </h1>
         </a>
 
-        <button id="logout-btn" class="logout-btn" type="button">Sign out</button>
         <button id="profile-btn" class="profile-btn" title="View Farm Operator Profile" aria-label="View farm operator profile">
           <svg class="profile-avatar-svg" viewBox="0 0 24 24">
             <circle cx="12" cy="12" r="10" fill="#e8f5e9" stroke="#3b7b4e" stroke-width="1.8" />
@@ -838,21 +837,13 @@
             style="width: 70px; height: 70px; border-radius: 50%; background: #c8e6c9; margin: 0 auto 10px; display: flex; align-items: center; justify-content: center; font-size: 32px;">
             👨‍🌾
           </div>
-          <h4 style="font-size: 18px; color: var(--primary-dark);">Farm Manager</h4>
-          <p style="font-size: 13px; color: var(--text-muted);">Station #04 - EcoAzolla Pond 1</p>
+          <h4 id="profile-username" style="font-size: 18px; color: var(--primary-dark);">Local user</h4>
+          <p style="font-size: 13px; color: var(--text-muted);">AzollaSense local account</p>
         </div>
         <div class="settings-card-list">
           <div class="setting-row-card">
             <span class="setting-label">Pond Unit ID</span>
             <span class="setting-status-text">AZ-POND-04</span>
-          </div>
-          <div class="setting-row-card">
-            <span class="setting-label">Firmware</span>
-            <span class="setting-status-text">v2.4.1-edge</span>
-          </div>
-          <div class="setting-row-card">
-            <span class="setting-label">Telemetry Status</span>
-            <span class="setting-status-text" style="color: #2e7d32; font-weight: 700;">Healthy</span>
           </div>
         </div>
         <form id="add-user-form" class="local-user-form">
@@ -864,6 +855,7 @@
           <button type="submit">Create account</button>
           <p id="add-user-message" role="status"></p>
         </form>
+        <button id="logout-btn" class="logout-btn profile-logout-btn" type="button">Sign out</button>
       </div>
     </div>
   </div>
@@ -872,7 +864,7 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Application Scripts -->
-  <script src="./js/app.js?v=22" defer></script>
+  <script src="./js/app.js?v=23" defer></script>
   <script>
     // Register Service Worker for PWA
     if ('serviceWorker' in navigator) {
