@@ -140,6 +140,7 @@ state_lock = threading.RLock()
 state = {
     "telemetry": {
         "water_level": 26.0,
+        "water_distance_cm": None,
         "temperature": 31.5,
         "ph": 7.2,
         "ph_voltage": None,
@@ -156,8 +157,9 @@ state = {
     "model": None,
     "model_status": "not loaded",
     "last_capture_date": None,
-    "actuators": {"motor": False, "solenoid": False, "pump": False, "pump_manual": False,
-                  "pump_auto": False, "canopy_auto": False, "device_connected": False},
+    "actuators": {"motor": False, "canopy_motor_running": False, "solenoid": False,
+                  "pump": False, "pump_manual": False, "pump_auto": False,
+                  "pump_auto_running": False, "canopy_auto": False, "device_connected": False},
 }
 
 serial_lock = threading.Lock()
@@ -316,8 +318,6 @@ def serial_reader_thread():
                         "canopy_auto": restored["canopy_auto"],
                         "solenoid": False,
                     }
-                    with settings_lock:
-                        restore_command.update(sensor_settings)
                     if not restored["canopy_auto"]:
                         restore_command["motor"] = restored["motor"]
                     serial_device.write((json.dumps(restore_command) + "\n").encode("utf-8"))
@@ -332,21 +332,83 @@ def serial_reader_thread():
                 print(f"[SERIAL] Ignoring non-JSON line: {line[:120]}")
                 continue
             if message.get("type") == "telemetry":
+                with settings_lock:
+                    settings = dict(sensor_settings)
+
+                def numeric_reading(name):
+                    value = message.get(name)
+                    return float(value) if isinstance(value, (int, float)) and math.isfinite(value) else None
+
+                distance = numeric_reading("water_distance_cm")
+                ph_voltage = numeric_reading("ph_voltage")
+                water_level = settings["tank_depth_cm"] - distance + settings["water_level_offset_cm"] if distance is not None else None
+                ph_span = settings["ph4_voltage"] - settings["ph7_voltage"]
+                ph = (7.0 + (ph_voltage - settings["ph7_voltage"]) * (4.0 - 7.0) / ph_span
+                      if ph_voltage is not None and abs(ph_span) >= 0.05 else None)
+                temperature = numeric_reading("temperature")
+                lux = numeric_reading("lux")
+                published_readings = {
+                    "water_distance_cm": distance,
+                    "water_level": water_level,
+                    "temperature": temperature,
+                    "ph": ph,
+                    "ph_voltage": ph_voltage,
+                    "lux": lux,
+                }
+                now_monotonic = time.monotonic()
+                command = {"type": "heartbeat"}
                 with state_lock:
-                    for key in ("water_level", "temperature", "ph", "ph_voltage", "lux"):
-                        value = message.get(key)
-                        if isinstance(value, (int, float)):
-                            state["telemetry"][key] = round(value, 2)
-                    for key in ("solenoid", "pump", "pump_manual", "pump_auto", "canopy_auto"):
+                    for key in ("solenoid", "pump", "pump_manual", "pump_auto", "canopy_auto", "pump_auto_running"):
                         if key in message:
                             state["actuators"][key] = bool(message[key])
                     if "canopy_deployed" in message:
                         state["actuators"]["motor"] = bool(message["canopy_deployed"])
+                    if "motor_running" in message:
+                        state["actuators"]["canopy_motor_running"] = bool(message["motor_running"])
                     state["actuators"]["device_connected"] = True
-                    state["telemetry"]["sensor_updated_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
-                    payload = dict(state["telemetry"])
+
+                    pump_was_running = state["actuators"].get("pump_auto_running", False)
+                    pump_should_run = pump_was_running
+                    if not state["actuators"].get("pump_auto") or state["actuators"].get("solenoid"):
+                        pump_should_run = False
+                    elif water_level is not None:
+                        if not pump_was_running and water_level <= settings["pump_target_cm"]:
+                            pump_should_run = True
+                        elif pump_was_running and water_level >= settings["pump_target_cm"] + settings["pump_hysteresis_cm"]:
+                            pump_should_run = False
+                    if pump_should_run != pump_was_running:
+                        state["actuators"]["pump_auto_running"] = pump_should_run
+                    command.update({
+                        "pump": state["actuators"].get("pump_manual", False),
+                        "pump_auto": state["actuators"].get("pump_auto", False),
+                        "pump_auto_running": pump_should_run,
+                        "canopy_auto": state["actuators"].get("canopy_auto", False),
+                        "solenoid": state["actuators"].get("solenoid", False),
+                    })
+
+                    deployed = state["actuators"].get("motor", False)
+                    motor_running = state["actuators"].get("canopy_motor_running", False)
+                    if state["actuators"].get("canopy_auto") and lux is not None and not motor_running:
+                        if lux >= settings["canopy_deploy_lux"] and not deployed:
+                            command["auto_motor"] = True
+                            state["actuators"]["motor"] = True
+                        elif lux <= settings["canopy_release_lux"] and deployed:
+                            command["auto_motor"] = False
+                            state["actuators"]["motor"] = False
+
+                    publish_interval = settings["update_interval_seconds"]
+                    should_publish = (now_monotonic - state.get("last_telemetry_publish_monotonic", 0.0) >= publish_interval)
+                    if should_publish:
+                        state["last_telemetry_publish_monotonic"] = now_monotonic
+                        for key, value in published_readings.items():
+                            if value is not None:
+                                state["telemetry"][key] = round(value, 2)
+                        state["telemetry"]["sensor_updated_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+                    payload = dict(state["telemetry"]) if should_publish else None
                     actuators = dict(state["actuators"])
-                socketio.emit("telemetry_update", payload)
+                send_device_command(command)
+                if payload is not None:
+                    socketio.emit("telemetry_update", payload)
                 socketio.emit("actuator_update", actuators)
         except (serial.SerialException, OSError) as exc:
             print(f"[SERIAL] Disconnected: {exc}")
@@ -733,8 +795,16 @@ def handle_set_actuator(data):
     elif name == "solenoid":
         with state_lock:
             state["actuators"][name] = enabled
+            if enabled:
+                state["actuators"]["pump_auto_running"] = False
 
     sent = send_device_command(command)
+    if name == "solenoid" and enabled:
+        send_device_command({"pump_auto_running": False})
+    if name == "pump_auto" and not enabled:
+        with state_lock:
+            state["actuators"]["pump_auto_running"] = False
+        send_device_command({"pump_auto_running": False})
     return {"success": True, "pending": not sent}
 
 
@@ -969,10 +1039,8 @@ def api_settings():
         print(f"[SETTINGS] Could not persist sensor settings: {exc}")
         return jsonify({"success": False, "error": "Could not save settings on the Raspberry Pi."}), 500
 
-    command = {"type": "config", **updated}
-    sent = send_device_command(command)
     socketio.emit("sensor_settings", updated)
-    return jsonify({"success": True, "settings": updated, "device_updated": sent})
+    return jsonify({"success": True, "settings": updated})
 
 
 @app.route("/api/browning/latest")

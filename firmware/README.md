@@ -6,7 +6,7 @@
    Adafruit Unified Sensor, OneWire, DallasTemperature, and ArduinoJson.
 2. Open `azollasense_esp32.ino`, check GPIOs, motor travel time, and relay
    polarity for your hardware, then upload it. Sensor thresholds and calibration
-   are saved from the webapp after this serial-config capable sketch is installed.
+   are configured in the webapp and stored on the Raspberry Pi.
 3. Install the Python requirements for the web backend, including `pyserial`.
    Close Arduino Serial Monitor before starting the backend; only one program can
    own the ESP32 serial port at a time.
@@ -19,28 +19,29 @@ The Raspberry Pi saves pump/canopy switch preferences in Flask's `instance`
 directory (`instance/actuator_preferences.json`) and sensor thresholds and
 calibration in `instance/sensor_settings.json`. Settings → Sensor Settings can
 change temperature, pH, water-level, canopy-light, browning, pump, pH calibration,
-and ultrasonic depth values. Saving sends the supported live controls and sensor
-calibration over serial; settings are also restored when the ESP32 reconnects.
-The Update Interval setting controls how often the ESP32 sends sensor readings
-to the app, from 2 seconds up to 1 hour.
+and ultrasonic depth values. The Pi applies those settings locally; it does not
+send calibration or threshold configuration to the ESP32 on boot. The Update
+Interval controls how often the Pi publishes readings to the app, from 2 seconds
+up to 1 hour. The ESP32 sends raw pH voltage and ultrasonic distance every 2 seconds.
 The pH voltage fields are the measured stable voltages in pH 7 and pH 4 buffer
 solutions. The water-level depth is the empty-tank distance from sensor face to
-bottom; correction adds to the calculated level. A firmware update is required
-once to add this serial configuration protocol to an older ESP32 sketch.
-The ESP32 boots with pump and canopy automation disabled and outputs off until
-it receives this restore command. The solenoid always starts OFF for safety.
+bottom; correction adds to the calculated level. Upload this firmware version
+once so the ESP32 reports raw sensor readings for the Pi to calibrate.
+The ESP32 boots with outputs off until it receives the Pi's actuator-state
+restore command. If Pi commands stop arriving for 6 seconds, it turns outputs
+off. The solenoid always starts OFF for safety.
 
 ## Serial protocol
 
 ESP32 telemetry is one JSON object per line, for example:
 
 ```json
-{"type":"telemetry","water_level":24.8,"temperature":27.1,"ph":7.0,"lux":46200,"motor":true,"solenoid":false,"pump":true,"pump_manual":false,"pump_auto":true,"canopy_auto":true}
+{"type":"telemetry","water_distance_cm":25.2,"temperature":27.1,"ph_voltage":2.51,"lux":46200,"canopy_deployed":true,"motor_running":false,"solenoid":false,"pump":false,"pump_manual":false,"pump_auto":true,"pump_auto_running":false,"canopy_auto":true}
 ```
 
-The backend parses that line, updates its shared telemetry state, and its
-existing Socket.IO event updates the webapp. Dashboard switch events become
-JSON command lines sent back to the ESP32 over the same USB serial connection.
+The backend converts pH voltage and ultrasonic distance using its saved Pi
+settings, runs pump and canopy threshold logic, then sends actuator commands to
+the ESP32. Dashboard switch events use the same serial command link.
 
 ## HW-039 / IBT-2 motor driver
 
@@ -78,8 +79,8 @@ protected half-bridge intended for PWM motor-drive use ([Infineon datasheet](htt
 
 Direction is selected by RPWM vs LPWM, with both enable pins asserted while
 driving. The web switch means deployed: ON drives the deploy direction; OFF
-drives the reverse/retract direction. The light automation deploys above the
-high lux threshold and retracts below the lower threshold. Travel runs for
+drives the reverse/retract direction. The Raspberry Pi sends deploy and retract
+commands when the configured lux thresholds are crossed. Travel runs for
 `MOTOR_TRAVEL_MS`, which must be tuned to the mechanism. Add end-stop switches
 or use a limit-aware actuator/controller where possible; timed travel alone
 cannot confirm the canopy reached its end position. Start with the motor
@@ -97,17 +98,18 @@ continuous-current rating.
 
 ## Sensor calibration and thresholds
 
-- Sensor Settings stores the empty-tank sensor-to-bottom distance and an
-  installation correction. Water level is calculated as depth minus measured
-  air gap plus the correction.
-- Pump auto-fill starts at or below its configured target and stops at the
+- Sensor Settings on the Raspberry Pi stores the empty-tank sensor-to-bottom
+  distance and an installation correction. The Pi calculates water level as
+  depth minus measured air gap plus the correction.
+- The Pi runs pump auto-fill at or below its configured target and stops at the
   target plus the configured margin.
 - Calibrate pH using stable PH-4502C output voltages measured in pH 7 and pH 4
   buffer solutions. Verify the interface output never exceeds the ESP32 ADC
   input range. Do not connect a bare pH probe to the ESP32.
 - JSN-SR04T Echo may be 5 V; level shift it before the ESP32 input. The sketch
   assumes a 4.7 kΩ DS18B20 data pull-up to 3.3 V.
-- Canopy limit switches stop normal travel at each endpoint; `MOTOR_TRAVEL_MS`
+- Canopy thresholds are evaluated on the Pi. Limit switches stop normal travel
+  at each endpoint; `MOTOR_TRAVEL_MS`
   is still a backup timeout and should be set slightly longer than measured
   full travel time.
 - The pump manual switch requests pump ON; switching it off removes that request

@@ -5,8 +5,8 @@
  * OneWire, DallasTemperature, ArduinoJson.
  * Select an ESP32 Dev Module. Serial protocol: one JSON object per line.
  *
- * Set tank geometry, calibrated pH conversion, relay polarity, thresholds,
- * motor travel time, and GPIOs for the exact modules before connecting loads.
+ * Sensor thresholds and calibration live on the Raspberry Pi. Verify relay
+ * polarity, motor travel time, and GPIOs for the exact modules before loads.
  */
 #include <Arduino.h>
 #include <Wire.h>
@@ -34,17 +34,8 @@ constexpr int PUMP_RELAY_PIN = 14;
 // Many optocoupler relay boards are active-low. Verify your board before use.
 constexpr bool RELAY_ACTIVE_LOW = true;
 constexpr uint32_t MOTOR_TRAVEL_MS = 8000;  // tune for full canopy travel; add limit switches
-
-// Calibrate using known pH buffer solutions. Default is only a starting point.
-float tankDepthCm = 50.0f;
-float waterLevelOffsetCm = 0.0f;
-float targetWaterLevelCm = 25.0f;
-float pumpStopHysteresisCm = 2.0f;
-float canopyDeployLux = 45000.0f;
-float canopyReleaseLux = 35000.0f;
-float ph7Voltage = 2.50f;
-float ph4Voltage = 3.026f;
-uint32_t telemetryIntervalMs = 2000;
+constexpr uint32_t TELEMETRY_INTERVAL_MS = 2000;
+constexpr uint32_t PI_COMMAND_TIMEOUT_MS = 6000;
 
 Adafruit_TSL2591 tsl = Adafruit_TSL2591(2591);
 OneWire oneWire(ONE_WIRE_PIN);
@@ -62,6 +53,7 @@ bool motorDirectionDeploy = true;
 bool pumpOutput = false;
 uint32_t motorStartedAt = 0;
 uint32_t lastTelemetryAt = 0;
+uint32_t lastPiCommandAt = 0;
 String inputLine;
 
 void setRelay(int pin, bool on) {
@@ -104,8 +96,8 @@ void moveCanopy(bool deployed) {
   motorStartedAt = millis();
 }
 
-float readPh(float* measuredVoltage = nullptr) {
-  // Average analog samples; calibrate this conversion for your own interface.
+float readPhVoltage() {
+  // The Raspberry Pi applies the saved two-point pH calibration.
   uint32_t sum = 0;
   for (int i = 0; i < 16; ++i) {
     sum += analogRead(PH_PIN);
@@ -113,8 +105,7 @@ float readPh(float* measuredVoltage = nullptr) {
   }
   const float adc = sum / 16.0f;
   const float volts = (adc / 4095.0f) * 3.3f;
-  if (measuredVoltage) *measuredVoltage = volts;
-  return 7.0f + (volts - ph7Voltage) * (4.0f - 7.0f) / (ph4Voltage - ph7Voltage);
+  return volts;
 }
 
 float readWaterDistanceCm() {
@@ -128,21 +119,21 @@ float readWaterDistanceCm() {
   return duration * 0.0343f / 2.0f;
 }
 
-void sendTelemetry(float waterLevel, float temperature, float ph, float phVoltage, float lux) {
+void sendTelemetry(float waterDistance, float temperature, float phVoltage, float lux) {
   StaticJsonDocument<384> doc;
   doc["type"] = "telemetry";
-  if (isfinite(waterLevel)) doc["water_level"] = waterLevel;
+  if (isfinite(waterDistance)) doc["water_distance_cm"] = waterDistance;
   if (isfinite(temperature)) doc["temperature"] = temperature;
-  if (isfinite(ph)) doc["ph"] = ph;
   if (isfinite(phVoltage)) doc["ph_voltage"] = phVoltage;
   if (isfinite(lux)) doc["lux"] = lux;
-  doc["motor"] = motorOutput;
   doc["canopy_deployed"] = canopyDeployed;
   doc["solenoid"] = solenoidOn;
   doc["pump"] = pumpOutput;
   doc["pump_manual"] = pumpManualRequest;
   doc["pump_auto"] = pumpAutoEnabled;
+  doc["pump_auto_running"] = pumpAutoRunning;
   doc["canopy_auto"] = canopyAuto;
+  doc["motor_running"] = motorOutput;
   serializeJson(doc, Serial);
   Serial.println();
 }
@@ -151,20 +142,11 @@ void processCommand(const String& line) {
   StaticJsonDocument<768> doc;
   if (deserializeJson(doc, line)) return;
   const bool restoringState = doc["type"] == "restore_state";
-  if (restoringState) controllerReady = true;
-
-  if (doc.containsKey("tank_depth_cm")) tankDepthCm = constrain(doc["tank_depth_cm"].as<float>(), 1.0f, 500.0f);
-  if (doc.containsKey("water_level_offset_cm")) waterLevelOffsetCm = constrain(doc["water_level_offset_cm"].as<float>(), -100.0f, 100.0f);
-  if (doc.containsKey("pump_target_cm")) targetWaterLevelCm = constrain(doc["pump_target_cm"].as<float>(), 0.0f, 500.0f);
-  if (doc.containsKey("pump_hysteresis_cm")) pumpStopHysteresisCm = constrain(doc["pump_hysteresis_cm"].as<float>(), 0.1f, 100.0f);
-  if (doc.containsKey("canopy_deploy_lux")) canopyDeployLux = constrain(doc["canopy_deploy_lux"].as<float>(), 0.0f, 200000.0f);
-  if (doc.containsKey("canopy_release_lux")) canopyReleaseLux = constrain(doc["canopy_release_lux"].as<float>(), 0.0f, 200000.0f);
-  if (doc.containsKey("ph7_voltage")) ph7Voltage = constrain(doc["ph7_voltage"].as<float>(), 0.0f, 3.3f);
-  if (doc.containsKey("ph4_voltage")) ph4Voltage = constrain(doc["ph4_voltage"].as<float>(), 0.0f, 3.3f);
-  if (doc.containsKey("update_interval_seconds")) telemetryIntervalMs = constrain(doc["update_interval_seconds"].as<uint32_t>(), 2U, 3600U) * 1000UL;
-  if (fabsf(ph4Voltage - ph7Voltage) < 0.05f) ph4Voltage = ph7Voltage + (ph7Voltage <= 3.25f ? 0.05f : -0.05f);
+  const bool heartbeat = doc["type"] == "heartbeat";
+  if (restoringState || heartbeat) controllerReady = true;
 
   if (!controllerReady && !restoringState) return;
+  lastPiCommandAt = millis();
 
   if (doc.containsKey("canopy_auto")) {
     canopyAuto = doc["canopy_auto"].as<bool>();
@@ -173,9 +155,11 @@ void processCommand(const String& line) {
     if (!restoringState) canopyAuto = false;
     moveCanopy(doc["motor"].as<bool>());
   }
+  if (doc.containsKey("auto_motor")) moveCanopy(doc["auto_motor"].as<bool>());
   if (doc.containsKey("solenoid")) solenoidOn = doc["solenoid"].as<bool>();
   if (doc.containsKey("pump")) pumpManualRequest = doc["pump"].as<bool>();
   if (doc.containsKey("pump_auto")) pumpAutoEnabled = doc["pump_auto"].as<bool>();
+  if (doc.containsKey("pump_auto_running")) pumpAutoRunning = doc["pump_auto_running"].as<bool>();
 }
 
 void readSerialCommands() {
@@ -220,6 +204,13 @@ void loop() {
   readSerialCommands();
   const uint32_t now = millis();
 
+  if (controllerReady && now - lastPiCommandAt > PI_COMMAND_TIMEOUT_MS) {
+    controllerReady = false;
+    solenoidOn = false;
+    pumpAutoRunning = false;
+    motorOutput = false;
+  }
+
   float lux = NAN;
   const uint32_t full = tsl.getFullLuminosity();
   const uint16_t ir = full >> 16;
@@ -227,10 +218,6 @@ void loop() {
   const float measuredLux = tsl.calculateLux(visible, ir);
   if (measuredLux >= 0 && isfinite(measuredLux)) lux = measuredLux;
 
-  if (controllerReady && canopyAuto && isfinite(lux)) {
-    if (lux >= canopyDeployLux && !canopyDeployed && !motorOutput) moveCanopy(true);
-    if (lux <= canopyReleaseLux && canopyDeployed && !motorOutput) moveCanopy(false);
-  }
   const bool closedLimit = digitalRead(CANOPY_CLOSED_LIMIT_PIN) == HIGH;
   const bool openLimit = digitalRead(CANOPY_OPEN_LIMIT_PIN) == HIGH;
   if ((closedLimit && openLimit) ||
@@ -247,28 +234,18 @@ void loop() {
   }
 
   const float distance = readWaterDistanceCm();
-  const float waterLevel = isfinite(distance) ? tankDepthCm - distance + waterLevelOffsetCm : NAN;
   waterTemp.requestTemperatures();
   const float temperature = waterTemp.getTempCByIndex(0);
-  float phVoltage = NAN;
-  const float ph = readPh(&phVoltage);
-
-  if (controllerReady && pumpAutoEnabled && isfinite(waterLevel) && !solenoidOn) {
-    if (!pumpAutoRunning && waterLevel <= targetWaterLevelCm) pumpAutoRunning = true;
-    if (pumpAutoRunning && waterLevel >= targetWaterLevelCm + pumpStopHysteresisCm)
-      pumpAutoRunning = false;
-  } else {
-    pumpAutoRunning = false;
-  }
+  const float phVoltage = readPhVoltage();
 
   pumpOutput = controllerReady && !solenoidOn && (pumpManualRequest || pumpAutoRunning);
   setMotorDriver(motorOutput, motorDirectionDeploy);
   setRelay(SOLENOID_RELAY_PIN, solenoidOn);
   setRelay(PUMP_RELAY_PIN, pumpOutput);
 
-  if (now - lastTelemetryAt >= telemetryIntervalMs) {
+  if (now - lastTelemetryAt >= TELEMETRY_INTERVAL_MS) {
     lastTelemetryAt = now;
-    sendTelemetry(waterLevel, temperature, ph, phVoltage, lux);
+    sendTelemetry(distance, temperature, phVoltage, lux);
   }
   delay(20);
 }

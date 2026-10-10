@@ -556,7 +556,7 @@
         if (!response.ok || !result.success) throw new Error(result.error || "Could not save settings.");
         dirtySensorSettings.clear();
         applySensorSettings(result.settings, true);
-        showToast(result.device_updated ? "Settings saved and sent to the ESP32." : "Settings saved. ESP32 will receive them when it reconnects.");
+        showToast("Settings saved on the Raspberry Pi.");
       } catch (error) { showToast(error.message || "Could not save settings."); }
       finally {
         qsa("[data-setting]").forEach((input) => { input.disabled = false; });
