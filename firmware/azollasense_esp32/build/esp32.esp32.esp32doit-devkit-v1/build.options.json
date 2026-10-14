@@ -1,0 +1,10 @@
+{
+  "additionalFiles": "",
+  "builtInLibrariesFolders": "C:\\Users\\malik\\AppData\\Local\\Arduino15\\libraries",
+  "compiler.optimization_flags": "-Os",
+  "customBuildProperties": "",
+  "fqbn": "esp32:esp32:esp32doit-devkit-v1:UploadSpeed=921600,FlashFreq=80,DebugLevel=none,EraseFlash=none",
+  "hardwareFolders": "C:\\Users\\malik\\AppData\\Local\\Arduino15\\packages\\esp32\\hardware\\esp32\\4.0.0-alpha1,C:\\Users\\malik\\AppData\\Local\\Arduino15\\packages\\esp32\\hardware\\esp32\\4.0.0-alpha1",
+  "otherLibrariesFolders": "c:\\Users\\malik\\Documents\\Arduino\\libraries",
+  "sketchLocation": "C:\\Users\\malik\\Desktop\\AzollaSense\\firmware\\azollasense_esp32"
+}
