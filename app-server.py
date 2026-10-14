@@ -41,6 +41,7 @@ MAX_FPS = 15
 # How often telemetry is broadcast while the camera stream is running
 STREAM_TELEMETRY_INTERVAL = 0.5
 CAPTURE_CAMERA_WARMUP_SECONDS = 5
+CAMERA_COVER_CONFIRM_TIMEOUT_SECONDS = 8
 YOLO_CONFIDENCE_THRESHOLD = 0.25
 PH_TIMEZONE = ZoneInfo("Asia/Manila")
 CAPTURE_DIR = os.path.join(BASE_DIR, "assets", "captures")
@@ -153,6 +154,10 @@ state = {
     "ai_vision_enabled": True,
     "stream_active": False,
     "capture_in_progress": False,
+    "camera_cover_requested_open": False,
+    "camera_cover_open": None,
+    "camera_cover_moving": False,
+    "camera_cover_reported_monotonic": 0.0,
     "camera": None,
     "model": None,
     "model_status": "not loaded",
@@ -305,6 +310,35 @@ def send_device_command(command):
             return False
 
 
+def set_camera_cover(opened, wait_for_position=False):
+    """Set the ESP32 cover position, optionally waiting for fresh telemetry."""
+    with state_lock:
+        state["camera_cover_requested_open"] = bool(opened)
+        state["camera_cover_reported_monotonic"] = 0.0
+    send_device_command({"camera_cover": bool(opened)})
+
+    if not wait_for_position:
+        return True
+
+    deadline = time.monotonic() + CAMERA_COVER_CONFIRM_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        with state_lock:
+            report_is_fresh = time.monotonic() - state["camera_cover_reported_monotonic"] <= CAMERA_COVER_CONFIRM_TIMEOUT_SECONDS
+            position_matches = state["camera_cover_open"] is bool(opened)
+            stopped = not state["camera_cover_moving"]
+        if report_is_fresh and position_matches and stopped:
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def sync_camera_cover(wait_for_position=False):
+    """Keep the cover open while either camera use owns the camera."""
+    with state_lock:
+        should_be_open = state["stream_active"] or state["capture_in_progress"]
+    return set_camera_cover(should_be_open, wait_for_position=wait_for_position)
+
+
 def serial_reader_thread():
     """Read ESP32 JSON telemetry and keep the existing dashboard state current."""
     global serial_device, serial_ready
@@ -329,6 +363,8 @@ def serial_reader_thread():
                         "canopy_auto": restored["canopy_auto"],
                         "solenoid": False,
                     }
+                    with state_lock:
+                        restore_command["camera_cover"] = state["camera_cover_requested_open"]
                     if not restored["canopy_auto"]:
                         restore_command["motor"] = restored["motor"]
                     serial_device.write((json.dumps(restore_command) + "\n").encode("utf-8"))
@@ -395,7 +431,13 @@ def serial_reader_thread():
                         "pump_auto_running": pump_should_run,
                         "canopy_auto": state["actuators"].get("canopy_auto", False),
                         "solenoid": state["actuators"].get("solenoid", False),
+                        "camera_cover": state["camera_cover_requested_open"],
                     })
+
+                    if isinstance(message.get("camera_cover_open"), bool):
+                        state["camera_cover_open"] = message["camera_cover_open"]
+                        state["camera_cover_moving"] = bool(message.get("camera_cover_moving", False))
+                        state["camera_cover_reported_monotonic"] = now_monotonic
 
                     deployed = state["actuators"].get("motor", False)
                     motor_running = state["actuators"].get("canopy_motor_running", False)
@@ -433,6 +475,8 @@ def serial_reader_thread():
                 serial_ready = False
             with state_lock:
                 state["actuators"]["device_connected"] = False
+                state["camera_cover_open"] = None
+                state["camera_cover_moving"] = False
             socketio.emit("actuator_update", dict(state["actuators"]))
             time.sleep(2)
 
@@ -522,6 +566,7 @@ def release_camera():
         except Exception:
             pass
         print("[CAMERA] Raspberry Pi Camera released.")
+    sync_camera_cover()
 
 
 def center_crop_square(frame):
@@ -543,22 +588,30 @@ def compute_coverage(masks_array, classes, target_class, height, width, total_pi
     return float(np.sum(mask) / total_pixels * 100.0)
 
 
-def _capture_image(force=False):
-    """Capture and analyze a frame; force bypasses the daily schedule guard."""
+def capture_is_due_today():
+    """Avoid moving the cover on repeated scheduler checks after today's capture."""
     now = datetime.now(PH_TIMEZONE)
     today = now.date().isoformat()
     try:
         with open(LATEST_CAPTURE_PATH, "r", encoding="utf-8") as record_file:
             latest = json.load(record_file)
-        if not force and latest.get("captured_at", "").startswith(today):
+        if latest.get("captured_at", "").startswith(today):
             with state_lock:
                 state["last_capture_date"] = today
             return False
     except (OSError, json.JSONDecodeError):
         pass
     with state_lock:
-        if not force and state["last_capture_date"] == today:
+        if state["last_capture_date"] == today:
             return False
+
+    return True
+
+
+def _capture_image(force=False):
+    """Capture and analyze a frame; force bypasses the daily schedule guard."""
+    if not force and not capture_is_due_today():
+        return False
 
     camera = open_camera()
     if camera is None:
@@ -627,12 +680,17 @@ def _capture_image(force=False):
 
 def run_daily_capture(force=False):
     """Give a requested capture exclusive camera access, preempting live video."""
+    if not force and not capture_is_due_today():
+        return False
     with state_lock:
         if state["capture_in_progress"]:
             return False
         state["capture_in_progress"] = True
         stream_was_active = state["stream_active"]
     try:
+        if not sync_camera_cover(wait_for_position=True):
+            print("[CAPTURE] Camera cover did not reach the open position; capture cancelled.")
+            return False
         if stream_was_active:
             print("[CAPTURE] Stopping live stream to prioritize image capture.")
             release_camera()
@@ -645,6 +703,7 @@ def run_daily_capture(force=False):
     finally:
         with state_lock:
             state["capture_in_progress"] = False
+        sync_camera_cover()
 
 
 def capture_scheduler_thread():
@@ -942,6 +1001,11 @@ def video_feed():
             return jsonify({"error": "camera stream already active"}), 503
         state["stream_active"] = True
 
+    if not sync_camera_cover(wait_for_position=True):
+        print("[CAMERA] Camera cover did not reach the open position; stream cancelled.")
+        release_camera()
+        return jsonify({"error": "camera cover is not ready"}), 503
+
     response = Response(generate_camera_stream(), mimetype="multipart/x-mixed-replace; boundary=frame")
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
@@ -964,6 +1028,11 @@ def health():
             "model": state["model_status"],
             "ai_vision": state["ai_vision_enabled"],
             "streaming": state["stream_active"],
+            "camera_cover": {
+                "requested_open": state["camera_cover_requested_open"],
+                "open": state["camera_cover_open"],
+                "moving": state["camera_cover_moving"],
+            },
             "telemetry": dict(state["telemetry"]),
             "actuators": dict(state["actuators"]),
         })
@@ -978,7 +1047,16 @@ def api_telemetry():
 @app.route("/api/state")
 def api_local_state():
     with state_lock, settings_lock:
-        return jsonify({"telemetry": dict(state["telemetry"]), "actuators": dict(state["actuators"]), "settings": dict(sensor_settings)})
+        return jsonify({
+            "telemetry": dict(state["telemetry"]),
+            "actuators": dict(state["actuators"]),
+            "settings": dict(sensor_settings),
+            "camera_cover": {
+                "requested_open": state["camera_cover_requested_open"],
+                "open": state["camera_cover_open"],
+                "moving": state["camera_cover_moving"],
+            },
+        })
 
 
 @app.route("/api/vision", methods=["POST"])

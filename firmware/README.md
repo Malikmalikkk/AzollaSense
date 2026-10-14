@@ -3,7 +3,8 @@
 ## Install and upload
 
 1. In Arduino IDE, select an ESP32 Dev Module and install Adafruit TSL2591,
-   Adafruit Unified Sensor, OneWire, DallasTemperature, and ArduinoJson.
+   Adafruit Unified Sensor, OneWire, DallasTemperature, ArduinoJson, and
+   ESP32Servo.
 2. Open `azollasense_esp32.ino`, check GPIOs, motor travel time, and relay
    polarity for your hardware, then upload it. Sensor thresholds and calibration
    are configured in the webapp and stored on the Raspberry Pi.
@@ -23,6 +24,16 @@ and ultrasonic depth values. The Pi applies those settings locally; it does not
 send calibration or threshold configuration to the ESP32 on boot. The Update
 Interval controls how often the Pi publishes readings to the app, from 2 seconds
 up to 1 hour. The ESP32 sends raw pH voltage and ultrasonic distance every 2 seconds.
+The camera cover servo uses GPIO 13. The Pi requests the cover open while a live
+stream or image capture is active, and closed after camera use ends. The ESP32
+reports the commanded position after the configured travel time; this is not
+physical position feedback. Set `CAMERA_COVER_CLOSED_ANGLE`,
+`CAMERA_COVER_OPEN_ANGLE`, and `CAMERA_COVER_TRAVEL_MS` for the installed
+mechanism. Test the servo linkage with the camera disconnected, and verify that
+both angles stop before the cover binds against its frame.
+Connect the servo signal to GPIO 13, power it from a supply sized for its stall
+current, and connect that supply ground to ESP32 GND. Do not power the servo
+from an ESP32 GPIO or 3.3 V pin.
 The pH voltage fields are the measured stable voltages in pH 7 and pH 4 buffer
 solutions. The water-level depth is the empty-tank distance from sensor face to
 bottom; correction adds to the calculated level. Upload this firmware version
@@ -36,7 +47,7 @@ off. The solenoid always starts OFF for safety.
 ESP32 telemetry is one JSON object per line, for example:
 
 ```json
-{"type":"telemetry","water_distance_cm":25.2,"temperature":27.1,"ph_voltage":2.51,"lux":46200,"canopy_deployed":true,"motor_running":false,"solenoid":false,"pump":false,"pump_manual":false,"pump_auto":true,"pump_auto_running":false,"canopy_auto":true}
+{"type":"telemetry","water_distance_cm":25.2,"temperature":27.1,"ph_voltage":2.51,"lux":46200,"canopy_deployed":true,"motor_running":false,"camera_cover_open":false,"camera_cover_moving":false,"solenoid":false,"pump":false,"pump_manual":false,"pump_auto":true,"pump_auto_running":false,"canopy_auto":true}
 ```
 
 The backend converts pH voltage and ultrasonic distance using its saved Pi

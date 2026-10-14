@@ -15,6 +15,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <ArduinoJson.h>
+#include <ESP32Servo.h>
 
 // ESP32-WROOM example wiring. GPIO numbers may differ on other boards.
 constexpr int PH_PIN = 34;       // PH-4502C conditioned analog output
@@ -30,16 +31,22 @@ constexpr int MOTOR_R_EN_PIN = 32;
 constexpr int MOTOR_L_EN_PIN = 33;
 constexpr int SOLENOID_RELAY_PIN = 27;
 constexpr int PUMP_RELAY_PIN = 14;
+constexpr int CAMERA_COVER_SERVO_PIN = 13;
 
 // Many optocoupler relay boards are active-low. Verify your board before use.
 constexpr bool RELAY_ACTIVE_LOW = true;
 constexpr uint32_t MOTOR_TRAVEL_MS = 8000;  // tune for full canopy travel; add limit switches
 constexpr uint32_t TELEMETRY_INTERVAL_MS = 2000;
 constexpr uint32_t PI_COMMAND_TIMEOUT_MS = 6000;
+// Tune these angles and travel time for the installed cover and servo.
+constexpr int CAMERA_COVER_CLOSED_ANGLE = 10;
+constexpr int CAMERA_COVER_OPEN_ANGLE = 100;
+constexpr uint32_t CAMERA_COVER_TRAVEL_MS = 700;
 
 Adafruit_TSL2591 tsl = Adafruit_TSL2591(2591);
 OneWire oneWire(ONE_WIRE_PIN);
 DallasTemperature waterTemp(&oneWire);
+Servo cameraCoverServo;
 
 bool controllerReady = false;
 bool canopyAuto = false;
@@ -51,7 +58,12 @@ bool pumpAutoRunning = false;
 bool motorOutput = false;
 bool motorDirectionDeploy = true;
 bool pumpOutput = false;
+bool cameraCoverServoReady = false;
+bool cameraCoverOpen = false;
+bool cameraCoverTargetOpen = false;
+bool cameraCoverMoving = false;
 uint32_t motorStartedAt = 0;
+uint32_t cameraCoverMoveStartedAt = 0;
 uint32_t lastTelemetryAt = 0;
 uint32_t lastPiCommandAt = 0;
 String inputLine;
@@ -70,6 +82,17 @@ void setMotorDriver(bool run, bool deploy) {
     digitalWrite(MOTOR_R_EN_PIN, HIGH);
     digitalWrite(MOTOR_L_EN_PIN, HIGH);
   }
+}
+
+void moveCameraCover(bool open) {
+  if (!cameraCoverServoReady) return;
+  if (cameraCoverMoving && open == cameraCoverTargetOpen) return;
+  if (!cameraCoverMoving && open == cameraCoverOpen) return;
+
+  cameraCoverTargetOpen = open;
+  cameraCoverMoving = true;
+  cameraCoverMoveStartedAt = millis();
+  cameraCoverServo.write(open ? CAMERA_COVER_OPEN_ANGLE : CAMERA_COVER_CLOSED_ANGLE);
 }
 
 void moveCanopy(bool deployed) {
@@ -134,6 +157,8 @@ void sendTelemetry(float waterDistance, float temperature, float phVoltage, floa
   doc["pump_auto_running"] = pumpAutoRunning;
   doc["canopy_auto"] = canopyAuto;
   doc["motor_running"] = motorOutput;
+  doc["camera_cover_open"] = cameraCoverOpen;
+  doc["camera_cover_moving"] = cameraCoverMoving;
   serializeJson(doc, Serial);
   Serial.println();
 }
@@ -157,6 +182,7 @@ void processCommand(const String& line) {
   }
   if (doc.containsKey("auto_motor")) moveCanopy(doc["auto_motor"].as<bool>());
   if (doc.containsKey("solenoid")) solenoidOn = doc["solenoid"].as<bool>();
+  if (doc.containsKey("camera_cover")) moveCameraCover(doc["camera_cover"].as<bool>());
   if (doc.containsKey("pump")) pumpManualRequest = doc["pump"].as<bool>();
   if (doc.containsKey("pump_auto")) pumpAutoEnabled = doc["pump_auto"].as<bool>();
   if (doc.containsKey("pump_auto_running")) pumpAutoRunning = doc["pump_auto_running"].as<bool>();
@@ -182,6 +208,15 @@ void setup() {
   pinMode(MOTOR_L_EN_PIN, OUTPUT);
   pinMode(SOLENOID_RELAY_PIN, OUTPUT);
   pinMode(PUMP_RELAY_PIN, OUTPUT);
+  cameraCoverServo.setPeriodHertz(50);
+  cameraCoverServo.attach(CAMERA_COVER_SERVO_PIN, 500, 2400);
+  cameraCoverServoReady = cameraCoverServo.attached();
+  cameraCoverTargetOpen = false;
+  cameraCoverMoving = cameraCoverServoReady;
+  if (cameraCoverServoReady) {
+    cameraCoverServo.write(CAMERA_COVER_CLOSED_ANGLE);
+    cameraCoverMoveStartedAt = millis();
+  }
   setMotorDriver(false, true);
   setRelay(SOLENOID_RELAY_PIN, false);
   setRelay(PUMP_RELAY_PIN, false);
@@ -209,6 +244,12 @@ void loop() {
     solenoidOn = false;
     pumpAutoRunning = false;
     motorOutput = false;
+    moveCameraCover(false);
+  }
+
+  if (cameraCoverMoving && now - cameraCoverMoveStartedAt >= CAMERA_COVER_TRAVEL_MS) {
+    cameraCoverOpen = cameraCoverTargetOpen;
+    cameraCoverMoving = false;
   }
 
   float lux = NAN;

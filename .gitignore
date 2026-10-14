@@ -3,3 +3,4 @@
 /__pycache__
 /assets/captures
 /instance
+/firmware/azollasense_esp32/build
