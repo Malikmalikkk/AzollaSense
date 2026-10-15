@@ -27,21 +27,33 @@
       const response = await fetch(backendUrl("/api/browning/latest"), { cache: "no-store" });
       if (!response.ok) return;
       const capture = await response.json();
-      const image = byId("browning-capture-image");
-      if (image && capture.image) image.src = backendUrl(capture.image);
-      const time = byId("browning-capture-time");
-      if (time && capture.captured_at) {
+      ["browning-capture-image", "status-browning-capture-image"].forEach((id) => {
+        const image = byId(id);
+        if (image && capture.image) image.src = backendUrl(capture.image);
+      });
+      if (capture.captured_at) {
         const date = new Date(capture.captured_at);
-        time.textContent = `CAPTURED ${new Intl.DateTimeFormat("en-PH", {
+        const formattedTime = `CAPTURED ${new Intl.DateTimeFormat("en-PH", {
           timeZone: "Asia/Manila", dateStyle: "medium", timeStyle: "short"
         }).format(date)} PHT`;
+        ["browning-capture-time", "status-capture-time"].forEach((id) => {
+          const time = byId(id);
+          if (time) time.textContent = formattedTime;
+        });
       }
-      const setText = (id, value) => { const el = byId(id); if (el) el.textContent = value; };
       const yoloUnavailable = capture.brown_cov == null || capture.green_cov == null;
-      setText("capture-brown-coverage", yoloUnavailable ? "YOLO unavailable" : `${Number(capture.brown_cov).toFixed(2)}%`);
-      setText("capture-green-coverage", yoloUnavailable ? "YOLO unavailable" : `${Number(capture.green_cov).toFixed(2)}%`);
-      setText("capture-temperature", capture.temperature == null ? "—" : `${capture.temperature}°C`);
-      setText("capture-water-level", capture.water_level == null ? "—" : `${capture.water_level} cm`);
+      const values = {
+        "capture-brown-coverage": yoloUnavailable ? "YOLO unavailable" : `${Number(capture.brown_cov).toFixed(2)}%`,
+        "capture-green-coverage": yoloUnavailable ? "YOLO unavailable" : `${Number(capture.green_cov).toFixed(2)}%`,
+        "capture-temperature": capture.temperature == null ? "—" : `${capture.temperature}°C`,
+        "capture-water-level": capture.water_level == null ? "—" : `${capture.water_level} cm`
+      };
+      Object.entries(values).forEach(([id, value]) => {
+        [id, `status-${id}`].forEach((targetId) => {
+          const element = byId(targetId);
+          if (element) element.textContent = value;
+        });
+      });
     } catch (error) {
       console.warn("Could not load latest browning capture:", error);
     }

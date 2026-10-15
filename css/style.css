@@ -2000,6 +2000,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   box-shadow: var(--shadow-sm);
 }
 .tank-status-container { margin-bottom: 18px; }
+.status-capture-time-badge { z-index: 2; }
+.status-capture-details { margin: 0 0 22px; }
 .system-status-badge {
   min-height: 44px;
   padding: 10px 16px;

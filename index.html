@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://cdn.socket.io" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./css/style.css?v=21">
+  <link rel="stylesheet" href="./css/style.css?v=22">
 </head>
 
 <body>
@@ -296,7 +296,10 @@
           <div class="tank-status-container">
             <div class="tank-feed-card" style="margin-bottom: 0;">
               <div class="tank-image-wrapper">
-                <img src="assets/tank.png" alt="Azolla Cultivation System Overview Tank" loading="lazy" decoding="async">
+                <img id="status-browning-capture-image" src="assets/tank.png" alt="Latest analyzed Azolla browning detection capture" loading="lazy" decoding="async">
+                <div class="feed-live-badge status-capture-time-badge">
+                  <span id="status-capture-time">Waiting for capture</span>
+                </div>
               </div>
             </div>
 
@@ -310,6 +313,13 @@
                 <path d="M17 8C8 10 5.9 16.17 3.82 21.34L5.71 22c5-3 12-5 14-12-1 2-5 3-9 3 0-1 4-4 6-5z" />
               </svg>
             </div>
+          </div>
+
+          <div class="capture-details status-capture-details" aria-live="polite" aria-label="Latest capture details">
+            <div class="capture-detail"><span>Browning area</span><strong id="status-capture-brown-coverage">Waiting for capture</strong></div>
+            <div class="capture-detail"><span>Healthy area</span><strong id="status-capture-green-coverage">—</strong></div>
+            <div class="capture-detail"><span>Water temperature</span><strong id="status-capture-temperature">—</strong></div>
+            <div class="capture-detail"><span>Water level</span><strong id="status-capture-water-level">—</strong></div>
           </div>
 
           <!-- Sensor Cards Grid (Synchronized) -->
@@ -864,7 +874,7 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Application Scripts -->
-  <script src="./js/app.js?v=27" defer></script>
+  <script src="./js/app.js?v=28" defer></script>
   <script>
     // Register Service Worker for PWA
     if ('serviceWorker' in navigator) {
