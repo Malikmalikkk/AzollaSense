@@ -7,6 +7,8 @@ segmentation for browning detection and relays telemetry to every connected clie
 
 import os
 import json
+import csv
+import io
 import math
 import hashlib
 import hmac
@@ -25,7 +27,7 @@ try:
     from picamera2 import Picamera2
 except ImportError:
     Picamera2 = None
-from flask import Flask, Response, jsonify, request, send_from_directory, redirect, make_response, g
+from flask import Flask, Response, jsonify, request, send_from_directory, redirect, make_response, g, stream_with_context
 from flask_socketio import SocketIO
 from ultralytics import YOLO
 import serial
@@ -58,6 +60,54 @@ AUTH_DB_PATH = os.path.join(app.instance_path, "auth.sqlite3")
 SESSION_COOKIE = "azollasense_session"
 SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 7
 AUTH_DB_LOCK = threading.RLock()
+TELEMETRY_DB_PATH = os.path.join(app.instance_path, "telemetry.sqlite3")
+TELEMETRY_DB_LOCK = threading.RLock()
+LOG_SAMPLE_INTERVAL_SECONDS = 10
+LOG_SENSOR_FRESH_SECONDS = 30
+LOG_CAMERA_FRESH_SECONDS = 10
+LOG_RETENTION_DAYS = 90
+
+
+@contextmanager
+def telemetry_db():
+    connection = sqlite3.connect(TELEMETRY_DB_PATH, timeout=10)
+    connection.row_factory = sqlite3.Row
+    try:
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def init_telemetry_db():
+    with TELEMETRY_DB_LOCK, telemetry_db() as connection:
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS telemetry_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                ph REAL,
+                water_level REAL,
+                temperature REAL,
+                lux REAL,
+                canopy_status TEXT,
+                browning_pct REAL,
+                occupancy_pct REAL,
+                occupancy_date TEXT UNIQUE
+            )
+        """)
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_telemetry_logs_timestamp ON telemetry_logs(timestamp)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_telemetry_logs_occupancy_date ON telemetry_logs(occupancy_date)")
+        retention_cutoff = (datetime.now(PH_TIMEZONE) - timedelta(days=LOG_RETENTION_DAYS)).isoformat(timespec="seconds")
+        connection.execute("DELETE FROM telemetry_logs WHERE timestamp < ?", (retention_cutoff,))
+
+
+init_telemetry_db()
+if os.name != "nt":
+    os.chmod(TELEMETRY_DB_PATH, 0o600)
 
 
 @contextmanager
@@ -150,6 +200,7 @@ state = {
         "lux": None,
         "sensor_updated_at": None,
     },
+    "cv_updated_monotonic": None,
     "ai_vision_enabled": True,
     "stream_active": False,
     "capture_in_progress": False,
@@ -165,6 +216,92 @@ state = {
                   "pump": False, "pump_manual": False, "pump_auto": False,
                   "pump_auto_running": False, "canopy_auto": False, "device_connected": False},
 }
+
+
+def _numeric_value(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    return float(value)
+
+
+def _timestamp_age_seconds(value, now):
+    if not value:
+        return None
+    try:
+        observed_at = datetime.fromisoformat(value)
+        if observed_at.tzinfo is None:
+            observed_at = observed_at.replace(tzinfo=PH_TIMEZONE)
+        return (now - observed_at.astimezone(PH_TIMEZONE)).total_seconds()
+    except (TypeError, ValueError):
+        return None
+
+
+def _insert_telemetry_log(entry):
+    retention_cutoff = (datetime.now(PH_TIMEZONE) - timedelta(days=LOG_RETENTION_DAYS)).isoformat(timespec="seconds")
+    with TELEMETRY_DB_LOCK, telemetry_db() as connection:
+        connection.execute("""
+            INSERT INTO telemetry_logs
+                (timestamp, ph, water_level, temperature, lux, canopy_status, browning_pct, occupancy_pct, occupancy_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            entry["timestamp"], entry.get("ph"), entry.get("water_level"), entry.get("temperature"),
+            entry.get("lux"), entry.get("canopy_status"), entry.get("browning_pct"),
+            entry.get("occupancy_pct"), entry.get("occupancy_date"),
+        ))
+        connection.execute("DELETE FROM telemetry_logs WHERE timestamp < ?", (retention_cutoff,))
+
+
+def _record_scheduled_occupancy(captured_at, brown_pct, green_pct):
+    occupancy_pct = None
+    if brown_pct is not None and green_pct is not None:
+        occupancy_pct = round(min(100.0, max(0.0, brown_pct + green_pct)), 2)
+    capture_date = captured_at.astimezone(PH_TIMEZONE).date().isoformat()
+    _insert_telemetry_log({
+        "timestamp": captured_at.astimezone(PH_TIMEZONE).isoformat(timespec="seconds"),
+        "occupancy_pct": occupancy_pct,
+        "occupancy_date": capture_date,
+    })
+
+
+def sample_telemetry_once(now=None, monotonic_now=None):
+    """Persist one snapshot, replacing sensor and CV values that have gone stale with NULL."""
+    sampled_at = now or datetime.now(PH_TIMEZONE)
+    if sampled_at.tzinfo is None:
+        sampled_at = sampled_at.replace(tzinfo=PH_TIMEZONE)
+    sampled_at = sampled_at.astimezone(PH_TIMEZONE)
+    monotonic_now = time.monotonic() if monotonic_now is None else monotonic_now
+    with state_lock:
+        telemetry = dict(state["telemetry"])
+        actuators = dict(state["actuators"])
+        cv_updated_monotonic = state.get("cv_updated_monotonic")
+
+    sensor_age = _timestamp_age_seconds(telemetry.get("sensor_updated_at"), sampled_at)
+    sensor_fresh = (
+        actuators.get("device_connected") is True and sensor_age is not None
+        and 0 <= sensor_age <= LOG_SENSOR_FRESH_SECONDS
+    )
+    canopy_status = None
+    if sensor_fresh:
+        if actuators.get("canopy_motor_running"):
+            canopy_status = "moving"
+        else:
+            canopy_status = "deployed" if actuators.get("motor") else "retracted"
+
+    cv_age = monotonic_now - cv_updated_monotonic if isinstance(cv_updated_monotonic, (int, float)) else None
+    cv_fresh = cv_age is not None and 0 <= cv_age <= LOG_CAMERA_FRESH_SECONDS
+    entry = {
+        "timestamp": sampled_at.isoformat(timespec="seconds"),
+        "ph": _numeric_value(telemetry.get("ph")) if sensor_fresh else None,
+        "water_level": _numeric_value(telemetry.get("water_level")) if sensor_fresh else None,
+        "temperature": _numeric_value(telemetry.get("temperature")) if sensor_fresh else None,
+        "lux": _numeric_value(telemetry.get("lux")) if sensor_fresh else None,
+        "canopy_status": canopy_status,
+        "browning_pct": _numeric_value(telemetry.get("brown_cov")) if cv_fresh else None,
+        "occupancy_pct": None,
+        "occupancy_date": None,
+    }
+    _insert_telemetry_log(entry)
+    return entry
 
 serial_lock = threading.Lock()
 serial_device = None
@@ -578,9 +715,20 @@ def capture_is_due_today():
     now = datetime.now(PH_TIMEZONE)
     today = now.date().isoformat()
     try:
+        with TELEMETRY_DB_LOCK, telemetry_db() as connection:
+            occupancy_logged = connection.execute(
+                "SELECT 1 FROM telemetry_logs WHERE occupancy_date = ? LIMIT 1", (today,)
+            ).fetchone()
+        if occupancy_logged:
+            with state_lock:
+                state["last_capture_date"] = today
+            return False
+    except sqlite3.Error as exc:
+        print(f"[LOGS] Could not check today's occupancy record: {exc}")
+    try:
         with open(LATEST_CAPTURE_PATH, "r", encoding="utf-8") as record_file:
             latest = json.load(record_file)
-        if latest.get("captured_at", "").startswith(today):
+        if latest.get("captured_at", "").startswith(today) and latest.get("scheduled", True):
             with state_lock:
                 state["last_capture_date"] = today
             return False
@@ -646,6 +794,7 @@ def _capture_image(force=False):
     record = {
         "image": f"/assets/captures/{filename}",
         "captured_at": captured_at.isoformat(timespec="seconds"),
+        "scheduled": not force,
         "brown_cov": round(brown_pct, 2) if brown_pct is not None else None,
         "green_cov": round(green_pct, 2) if green_pct is not None else None,
         "model_status": model_status,
@@ -657,8 +806,19 @@ def _capture_image(force=False):
     with open(temp_path, "w", encoding="utf-8") as record_file:
         json.dump(record, record_file)
     os.replace(temp_path, LATEST_CAPTURE_PATH)
-    with state_lock:
-        state["last_capture_date"] = today
+    if not force:
+        with state_lock:
+            state["last_capture_date"] = captured_at.date().isoformat()
+        try:
+            _record_scheduled_occupancy(captured_at, record["brown_cov"], record["green_cov"])
+        except sqlite3.Error as exc:
+            print(f"[LOGS] Could not record daily occupancy: {exc}")
+    if model is not None and brown_pct is not None and green_pct is not None:
+        with state_lock:
+            state["telemetry"]["brown_cov"] = round(brown_pct, 2)
+            state["telemetry"]["green_cov"] = round(green_pct, 2)
+            state["telemetry"]["total_cov"] = round(brown_pct + green_pct, 2)
+            state["cv_updated_monotonic"] = time.monotonic()
     print(f"[CAPTURE] Saved daily capture: {image_path}")
     return True
 
@@ -760,9 +920,11 @@ def generate_camera_stream():
             if now - last_telemetry >= STREAM_TELEMETRY_INTERVAL:
                 last_telemetry = now
                 with state_lock:
-                    state["telemetry"]["green_cov"] = round(green_pct, 2)
-                    state["telemetry"]["brown_cov"] = round(brown_pct, 2)
-                    state["telemetry"]["total_cov"] = round(green_pct + brown_pct, 2)
+                    if model is not None:
+                        state["telemetry"]["green_cov"] = round(green_pct, 2)
+                        state["telemetry"]["brown_cov"] = round(brown_pct, 2)
+                        state["telemetry"]["total_cov"] = round(green_pct + brown_pct, 2)
+                        state["cv_updated_monotonic"] = time.monotonic()
                     payload = dict(state["telemetry"])
                 socketio.emit("telemetry_update", payload)
 
@@ -792,6 +954,16 @@ def sensor_thread():
         with state_lock:
             payload = dict(state["telemetry"])
         socketio.emit("telemetry_update", payload)
+
+
+def telemetry_log_thread():
+    """Persist one local telemetry snapshot every ten seconds."""
+    while True:
+        time.sleep(LOG_SAMPLE_INTERVAL_SECONDS)
+        try:
+            sample_telemetry_once()
+        except sqlite3.Error as exc:
+            print(f"[LOGS] Could not save telemetry reading: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -1024,6 +1196,89 @@ def api_telemetry():
         return jsonify(dict(state["telemetry"]))
 
 
+def _requested_log_range():
+    today = datetime.now(PH_TIMEZONE).date()
+    start_value = request.args.get("start", today.isoformat())
+    end_value = request.args.get("end", today.isoformat())
+    try:
+        start_date = datetime.strptime(start_value, "%Y-%m-%d").date()
+        end_date = datetime.strptime(end_value, "%Y-%m-%d").date()
+        if start_date.isoformat() != start_value or end_date.isoformat() != end_value:
+            raise ValueError("Use YYYY-MM-DD dates.")
+        if start_date > end_date:
+            raise ValueError("The start date must not be after the end date.")
+    except (TypeError, ValueError) as exc:
+        return None, None, (jsonify({"error": str(exc) or "Use YYYY-MM-DD dates."}), 400)
+
+    start_stamp = datetime.combine(start_date, datetime.min.time(), PH_TIMEZONE).isoformat(timespec="seconds")
+    end_stamp = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), PH_TIMEZONE).isoformat(timespec="seconds")
+    return start_stamp, end_stamp, None
+
+
+@app.route("/api/logs")
+def api_telemetry_logs():
+    start_stamp, end_stamp, error = _requested_log_range()
+    if error:
+        return error
+    try:
+        limit = min(500, max(1, int(request.args.get("limit", "200"))))
+        offset = max(0, int(request.args.get("offset", "0")))
+    except ValueError:
+        return jsonify({"error": "limit and offset must be whole numbers."}), 400
+    with TELEMETRY_DB_LOCK, telemetry_db() as connection:
+        where = "timestamp >= ? AND timestamp < ?"
+        total = connection.execute(f"SELECT COUNT(*) FROM telemetry_logs WHERE {where}", (start_stamp, end_stamp)).fetchone()[0]
+        rows = connection.execute(f"""
+            SELECT timestamp, ph, water_level, temperature, lux, canopy_status, browning_pct, occupancy_pct
+            FROM telemetry_logs WHERE {where}
+            ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?
+        """, (start_stamp, end_stamp, limit, offset)).fetchall()
+    return no_store(jsonify({
+        "entries": [dict(row) for row in rows],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }))
+
+
+@app.route("/api/logs/export")
+def api_export_telemetry_logs():
+    start_stamp, end_stamp, error = _requested_log_range()
+    if error:
+        return error
+    start_date = start_stamp[:10]
+    end_date = (datetime.fromisoformat(end_stamp) - timedelta(days=1)).date().isoformat()
+
+    def csv_rows():
+        output = io.StringIO(newline="")
+        writer = csv.writer(output)
+        writer.writerow(("timestamp_pht", "ph", "water_level_cm", "temperature_c", "lux", "canopy_status", "browning_pct", "occupancy_pct"))
+        yield output.getvalue()
+        output.seek(0)
+        output.truncate(0)
+        with telemetry_db() as connection:
+            cursor = connection.execute("""
+                SELECT timestamp, ph, water_level, temperature, lux, canopy_status, browning_pct, occupancy_pct
+                FROM telemetry_logs WHERE timestamp >= ? AND timestamp < ?
+                ORDER BY timestamp ASC, id ASC
+            """, (start_stamp, end_stamp))
+            for row in cursor:
+                writer.writerow(tuple(row))
+                yield output.getvalue()
+                output.seek(0)
+                output.truncate(0)
+
+    filename = f"azollasense-logs-{start_date}-to-{end_date}.csv"
+    return Response(
+        stream_with_context(csv_rows()),
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store, max-age=0",
+        },
+    )
+
+
 @app.route("/api/state")
 def api_local_state():
     with state_lock, settings_lock:
@@ -1142,6 +1397,7 @@ def handle_shutdown(signum, _frame):
 if __name__ == "__main__":
     load_model()
     threading.Thread(target=sensor_thread, daemon=True).start()
+    threading.Thread(target=telemetry_log_thread, daemon=True).start()
     threading.Thread(target=serial_reader_thread, daemon=True).start()
     threading.Thread(target=capture_scheduler_thread, daemon=True).start()
 

@@ -599,18 +599,160 @@
     modalBackdrops.forEach((modal) => modal.classList.remove("open"));
   }
 
+  const logsForm = byId("logs-filter-form");
+  const logsStartDate = byId("logs-start-date");
+  const logsEndDate = byId("logs-end-date");
+  const logsTableBody = byId("logs-table-body");
+  const logsTableStatus = byId("logs-table-status");
+  const logsPageStatus = byId("logs-page-status");
+  const logsPreviousPage = byId("logs-prev-page");
+  const logsNextPage = byId("logs-next-page");
+  const LOGS_PAGE_SIZE = 200;
+  let logsOffset = 0;
+  let logsTotal = 0;
+
+  function manilaDateString(date = new Date()) {
+    const parts = new Intl.DateTimeFormat("en", {
+      timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit"
+    }).formatToParts(date);
+    const part = (type) => parts.find((item) => item.type === type)?.value;
+    return `${part("year")}-${part("month")}-${part("day")}`;
+  }
+
+  function logsDateQuery() {
+    return new URLSearchParams({ start: logsStartDate.value, end: logsEndDate.value });
+  }
+
+  function displayLogValue(value, digits = 2) {
+    if (value === null || value === undefined || value === "") return "—";
+    return typeof value === "number" ? value.toFixed(digits) : String(value);
+  }
+
+  async function loadTelemetryLogs() {
+    if (!logsTableBody || !logsStartDate?.value || !logsEndDate?.value) return;
+    if (logsStartDate.value > logsEndDate.value) {
+      logsTableStatus.textContent = "The start date must not be after the end date.";
+      return;
+    }
+    logsTableStatus.textContent = "Loading readings…";
+    logsTableBody.replaceChildren();
+    try {
+      const query = logsDateQuery();
+      query.set("limit", String(LOGS_PAGE_SIZE));
+      query.set("offset", String(logsOffset));
+      const response = await fetch(backendUrl(`/api/logs?${query}`), { cache: "no-store", credentials: "same-origin" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not load telemetry history.");
+      logsTotal = result.total;
+      result.entries.forEach((entry) => {
+        const row = document.createElement("tr");
+        const timestamp = new Date(entry.timestamp);
+        const values = [
+          Number.isNaN(timestamp.getTime()) ? entry.timestamp : new Intl.DateTimeFormat("en-PH", {
+            timeZone: "Asia/Manila", dateStyle: "medium", timeStyle: "medium"
+          }).format(timestamp),
+          displayLogValue(entry.ph), displayLogValue(entry.water_level),
+          displayLogValue(entry.temperature), displayLogValue(entry.lux, 0),
+          displayLogValue(entry.canopy_status), displayLogValue(entry.browning_pct),
+          displayLogValue(entry.occupancy_pct)
+        ];
+        values.forEach((value) => {
+          const cell = document.createElement("td");
+          cell.textContent = value;
+          row.append(cell);
+        });
+        logsTableBody.append(row);
+      });
+      const first = logsTotal ? logsOffset + 1 : 0;
+      const last = Math.min(logsOffset + result.entries.length, logsTotal);
+      logsPageStatus.textContent = logsTotal ? `Showing ${first}–${last} of ${logsTotal}` : "0 readings";
+      logsTableStatus.textContent = logsTotal ? "Readings are stored locally for up to 90 days." : "No readings saved for these dates.";
+      logsPreviousPage.disabled = logsOffset === 0;
+      logsNextPage.disabled = logsOffset + result.entries.length >= logsTotal;
+    } catch (error) {
+      logsTableStatus.textContent = error.message || "Could not load telemetry history.";
+      logsPageStatus.textContent = "—";
+      logsPreviousPage.disabled = true;
+      logsNextPage.disabled = true;
+    }
+  }
+
+  function openLogsModal() {
+    if (!logsStartDate.value) logsStartDate.value = manilaDateString();
+    if (!logsEndDate.value) logsEndDate.value = manilaDateString();
+    logsOffset = 0;
+    openModal(logsModal);
+    loadTelemetryLogs();
+  }
+
+  if (logsForm) {
+    logsForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      logsOffset = 0;
+      loadTelemetryLogs();
+    });
+  }
+  if (logsPreviousPage) {
+    logsPreviousPage.addEventListener("click", () => {
+      logsOffset = Math.max(0, logsOffset - LOGS_PAGE_SIZE);
+      loadTelemetryLogs();
+    });
+  }
+  if (logsNextPage) {
+    logsNextPage.addEventListener("click", () => {
+      if (logsOffset + LOGS_PAGE_SIZE < logsTotal) logsOffset += LOGS_PAGE_SIZE;
+      loadTelemetryLogs();
+    });
+  }
+  const logsExportButton = byId("logs-export-btn");
+  if (logsExportButton) {
+    logsExportButton.addEventListener("click", async () => {
+      if (!logsForm.reportValidity() || logsStartDate.value > logsEndDate.value) {
+        logsTableStatus.textContent = "Choose a valid date range before downloading.";
+        return;
+      }
+      const exportButtonText = logsExportButton.textContent;
+      logsExportButton.disabled = true;
+      logsExportButton.textContent = "Preparing CSV…";
+      try {
+        const response = await fetch(backendUrl(`/api/logs/export?${logsDateQuery()}`), { cache: "no-store", credentials: "same-origin" });
+        if (!response.ok) {
+          const result = await response.json();
+          throw new Error(result.error || "Could not export telemetry history.");
+        }
+        const blob = await response.blob();
+        const downloadUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = downloadUrl;
+        link.download = `azollasense-logs-${logsStartDate.value}-to-${logsEndDate.value}.csv`;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+      } catch (error) {
+        logsTableStatus.textContent = error.message || "Could not export telemetry history.";
+      } finally {
+        logsExportButton.disabled = false;
+        logsExportButton.textContent = exportButtonText;
+      }
+    });
+  }
+
   const viewAllLogsBtn = byId("view-all-logs-btn");
   if (viewAllLogsBtn) {
     viewAllLogsBtn.addEventListener("click", (e) => {
       e.preventDefault();
-      openModal(logsModal);
+      openLogsModal();
     });
   }
 
   const statusLogsPill = byId("status-logs-pill");
   if (statusLogsPill) {
-    statusLogsPill.addEventListener("click", () => openModal(logsModal));
+    statusLogsPill.addEventListener("click", openLogsModal);
   }
+
+  const openTelemetryHistory = byId("open-telemetry-history");
+  if (openTelemetryHistory) openTelemetryHistory.addEventListener("click", openLogsModal);
 
   const profileBtn = byId("profile-btn");
   if (profileBtn) {

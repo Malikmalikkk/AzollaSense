@@ -2132,6 +2132,47 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .modal-close { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; }
 .modal-close:hover { background: #f1f5f0; color: var(--primary-dark); }
 .modal-body { overscroll-behavior: contain; }
+.logs-modal-box { width: min(1180px, 100%); max-width: 1180px; }
+.logs-filter-form {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto auto;
+  align-items: end;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.logs-filter-form label { display: grid; gap: 5px; color: var(--text-muted); font-size: 12px; font-weight: 700; }
+.logs-filter-form input {
+  min-width: 0;
+  min-height: 40px;
+  padding: 7px 9px;
+  border: 1px solid var(--card-border);
+  border-radius: 9px;
+  color: var(--text-primary);
+  background: #fff;
+  font: inherit;
+}
+.logs-action-btn, .logs-page-btn {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--primary-forest);
+  border-radius: 9px;
+  background: var(--primary-forest);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.logs-action-btn.secondary, .logs-page-btn { border-color: var(--card-border); background: #fff; color: var(--primary-forest); }
+.logs-action-btn:disabled, .logs-page-btn:disabled { opacity: .5; cursor: default; }
+.logs-table-status { min-height: 20px; margin: 8px 0; color: var(--text-muted); font-size: 12px; }
+.logs-table-wrap { max-height: min(54vh, 520px); overflow: auto; border: 1px solid var(--card-border); border-radius: 10px; }
+.telemetry-log-table { width: 100%; min-width: 860px; border-collapse: collapse; font-size: 12px; }
+.telemetry-log-table th, .telemetry-log-table td { padding: 9px 10px; border-bottom: 1px solid #edf1ec; text-align: right; white-space: nowrap; }
+.telemetry-log-table th { position: sticky; top: 0; z-index: 1; background: #f2f7f1; color: var(--primary-dark); font-size: 11px; }
+.telemetry-log-table th:first-child, .telemetry-log-table td:first-child { text-align: left; }
+.telemetry-log-table tbody tr:nth-child(even) { background: #fafcf9; }
+.logs-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; color: var(--text-muted); font-size: 12px; }
+.logs-pagination > div { display: flex; gap: 8px; }
 
 .auth-page { background: #f3f6f1; }
 .auth-card { border-color: #e2e9e1; border-radius: 20px; box-shadow: 0 16px 48px rgba(25,54,34,.1); }
@@ -2202,6 +2243,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .nav-label { font-size: 13px; font-weight: 650; }
   .nav-tab-btn::after, .nav-divider { display: none; }
   .toast-container { bottom: 24px; }
+}
+
+@media (max-width: 560px) {
+  .logs-modal-box { padding: 16px; }
+  .logs-filter-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .logs-filter-form label { min-width: 0; }
+  .logs-action-btn { width: 100%; padding-inline: 7px; }
+  .logs-table-wrap { max-height: 52vh; }
+  .logs-pagination { align-items: flex-start; flex-direction: column; }
 }
 
 @media (max-width: 560px) {

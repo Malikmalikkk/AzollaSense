@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://cdn.socket.io" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./css/style.css?v=22">
+  <link rel="stylesheet" href="./css/style.css?v=23">
 </head>
 
 <body>
@@ -417,62 +417,9 @@
             <a href="#" id="view-all-logs-btn" class="view-all-link">View All &gt;</a>
           </div>
 
-          <!-- List of Event Logs -->
-          <div class="logs-list">
-
-            <!-- Log 1: Pump -->
-            <div class="log-item-card pump">
-              <div class="log-icon-wrapper">
-                <!-- Water Pump SVG -->
-                <svg viewBox="0 0 36 36">
-                  <circle cx="18" cy="18" r="14" fill="#b3e5fc" opacity="0.5" />
-                  <path d="M13 13h10v10H13z" fill="#0288d1" />
-                  <circle cx="18" cy="18" r="3.5" fill="#ffffff" />
-                  <path d="M18 8v5M8 18h5M18 23v5M23 18h5" stroke="#0288d1" stroke-width="2" stroke-linecap="round" />
-                </svg>
-              </div>
-              <div class="log-content">
-                <div class="log-primary-text">Pump turned on</div>
-                <div class="log-secondary-text">Water Level Low</div>
-              </div>
-              <div class="log-time-stamp">3:45 PM</div>
-            </div>
-
-            <!-- Log 2: Browning -->
-            <div class="log-item-card browning">
-              <div class="log-icon-wrapper">
-                <!-- Warning Triangle SVG -->
-                <svg viewBox="0 0 36 36">
-                  <path d="M18 6L32 29H4L18 6Z" fill="#ffb74d" stroke="#f57c00" stroke-width="1.5"
-                    stroke-linejoin="round" />
-                  <line x1="18" y1="14" x2="18" y2="21" stroke="#5d4037" stroke-width="2.5" stroke-linecap="round" />
-                  <circle cx="18" cy="25" r="1.5" fill="#5d4037" />
-                </svg>
-              </div>
-              <div class="log-content">
-                <div class="log-primary-text">Browning Detected</div>
-                <div class="log-secondary-text val-browning-sectors">2 Sectors Affected</div>
-              </div>
-              <div class="log-time-stamp">2:20 PM</div>
-            </div>
-
-            <!-- Log 3: Canopy -->
-            <div class="log-item-card canopy">
-              <div class="log-icon-wrapper">
-                <!-- Retractable Canopy SVG -->
-                <svg viewBox="0 0 36 36">
-                  <path d="M8 14L18 8L28 14L25 24H11L8 14Z" fill="#81c784" stroke="#2e7d32" stroke-width="1.5"
-                    stroke-linejoin="round" />
-                  <path d="M11 24v5M25 24v5M18 8v16" stroke="#2e7d32" stroke-width="1.8" stroke-linecap="round" />
-                </svg>
-              </div>
-              <div class="log-content">
-                <div class="log-primary-text">Canopy Deployed</div>
-                <div class="log-secondary-text">Sunlight Duration Met</div>
-              </div>
-              <div class="log-time-stamp">1:00 PM</div>
-            </div>
-
+          <div class="logs-list recent-logs-summary">
+            <p>Telemetry readings are saved every 10 seconds and kept for 90 days.</p>
+            <button id="open-telemetry-history" class="view-all-link" type="button">Open telemetry history &gt;</button>
           </div>
 
         </section>
@@ -787,53 +734,39 @@
        MODALS: RECENT LOGS INSPECTOR & PROFILE
        ==================================================================== -->
   <div id="logs-modal" class="modal-backdrop">
-    <div class="modal-box">
+    <div class="modal-box logs-modal-box">
       <div class="modal-header">
-        <h3 class="modal-title">System Event Audit Logs</h3>
+        <h3 class="modal-title">Telemetry History</h3>
         <button class="modal-close" aria-label="Close dialog">&times;</button>
       </div>
       <div class="modal-body">
-        <div class="logs-list">
-          <div class="log-item-card pump">
-            <div class="log-content">
-              <div class="log-primary-text">Pump turned on</div>
-              <div class="log-secondary-text">Water Level Low (20.5 cm threshold triggered)</div>
-            </div>
-            <div class="log-time-stamp">3:45 PM</div>
-          </div>
-          <div class="log-item-card browning">
-            <div class="log-content">
-              <div class="log-primary-text">Browning Detected</div>
-              <div class="log-secondary-text">Sector B & D affected by heat stress (>35°C)</div>
-            </div>
-            <div class="log-time-stamp">2:20 PM</div>
-          </div>
-          <div class="log-item-card canopy">
-            <div class="log-content">
-              <div class="log-primary-text">Canopy Deployed</div>
-              <div class="log-secondary-text">Sunlight Duration Met (Cumulative 6.2 hrs)</div>
-            </div>
-            <div class="log-time-stamp">1:00 PM</div>
-          </div>
-          <div class="log-item-card pump">
-            <div class="log-content">
-              <div class="log-primary-text">Aerator Cycle Completed</div>
-              <div class="log-secondary-text">Dissolved Oxygen reached 7.8 mg/L</div>
-            </div>
-            <div class="log-time-stamp">11:15 AM</div>
-          </div>
-          <div class="log-item-card canopy">
-            <div class="log-content">
-              <div class="log-primary-text">Morning Dew Check Passed</div>
-              <div class="log-secondary-text">All sensor nodes online & calibrated</div>
-            </div>
-            <div class="log-time-stamp">8:00 AM</div>
+        <form id="logs-filter-form" class="logs-filter-form">
+          <label>From<input id="logs-start-date" type="date" required></label>
+          <label>To<input id="logs-end-date" type="date" required></label>
+          <button class="logs-action-btn" type="submit">Load readings</button>
+          <button id="logs-export-btn" class="logs-action-btn secondary" type="button">Download CSV</button>
+        </form>
+        <p id="logs-table-status" class="logs-table-status" role="status">Choose a date range to view readings.</p>
+        <div class="logs-table-wrap">
+          <table class="telemetry-log-table">
+            <thead><tr>
+              <th scope="col">Time (PHT)</th><th scope="col">pH</th><th scope="col">Water (cm)</th>
+              <th scope="col">Temp (°C)</th><th scope="col">Lux</th><th scope="col">Canopy</th>
+              <th scope="col">Browning (%)</th><th scope="col">Occupancy (%)</th>
+            </tr></thead>
+            <tbody id="logs-table-body"></tbody>
+          </table>
+        </div>
+        <div class="logs-pagination">
+          <span id="logs-page-status">—</span>
+          <div>
+            <button id="logs-prev-page" class="logs-page-btn" type="button" disabled>Previous</button>
+            <button id="logs-next-page" class="logs-page-btn" type="button" disabled>Next</button>
           </div>
         </div>
       </div>
     </div>
   </div>
-
   <!-- Profile Modal -->
   <div id="profile-modal" class="modal-backdrop">
     <div class="modal-box">
@@ -874,7 +807,7 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Application Scripts -->
-  <script src="./js/app.js?v=28" defer></script>
+  <script src="./js/app.js?v=29" defer></script>
   <script>
     // Register Service Worker for PWA
     if ('serviceWorker' in navigator) {
