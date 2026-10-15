@@ -62,7 +62,7 @@ SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 7
 AUTH_DB_LOCK = threading.RLock()
 TELEMETRY_DB_PATH = os.path.join(app.instance_path, "telemetry.sqlite3")
 TELEMETRY_DB_LOCK = threading.RLock()
-LOG_SAMPLE_INTERVAL_SECONDS = 10
+LOG_SAMPLE_INTERVAL_SECONDS = 30
 LOG_SENSOR_FRESH_SECONDS = 30
 LOG_CAMERA_FRESH_SECONDS = 10
 LOG_RETENTION_DAYS = 90
@@ -957,7 +957,7 @@ def sensor_thread():
 
 
 def telemetry_log_thread():
-    """Persist one local telemetry snapshot every ten seconds."""
+    """Persist one local telemetry snapshot every thirty seconds."""
     while True:
         time.sleep(LOG_SAMPLE_INTERVAL_SECONDS)
         try:
