@@ -1360,7 +1360,7 @@ def api_telemetry_logs():
     if error:
         return error
     try:
-        limit = min(500, max(1, int(request.args.get("limit", "200"))))
+        limit = min(30, max(1, int(request.args.get("limit", "30"))))
         offset = max(0, int(request.args.get("offset", "0")))
     except ValueError:
         return jsonify({"error": "limit and offset must be whole numbers."}), 400

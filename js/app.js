@@ -693,7 +693,7 @@
   const logsPageStatus = byId("logs-page-status");
   const logsPreviousPage = byId("logs-prev-page");
   const logsNextPage = byId("logs-next-page");
-  const LOGS_PAGE_SIZE = 200;
+  const LOGS_PAGE_SIZE = 30;
   let logsOffset = 0;
   let logsTotal = 0;
 
