@@ -553,7 +553,10 @@
   const notifToggle = byId("setting-notif-toggle");
   const notifStatusText = byId("notif-status-text");
   function decodeVapidKey(encoded) {
-    const base64 = encoded.replace(/-/g, "+").replace(/_/g, "/");
+    const output = String(encoded || "").trim();
+    const match = output.match(/(?:Application Server Key\s*=\s*)?([A-Za-z0-9_-]+={0,2})$/i);
+    if (!match) throw new Error("The server's VAPID public key is malformed. Check AZOLLASENSE_VAPID_PUBLIC_KEY.");
+    const base64 = match[1].replace(/=+$/, "").replace(/-/g, "+").replace(/_/g, "/");
     const raw = atob(base64 + "=".repeat((4 - base64.length % 4) % 4));
     return Uint8Array.from(raw, (char) => char.charCodeAt(0));
   }
