@@ -41,7 +41,6 @@ MAX_FPS = 15
 # How often telemetry is broadcast while the camera stream is running
 STREAM_TELEMETRY_INTERVAL = 0.5
 CAPTURE_CAMERA_WARMUP_SECONDS = 5
-CAMERA_COVER_CONFIRM_TIMEOUT_SECONDS = 8
 YOLO_CONFIDENCE_THRESHOLD = 0.25
 PH_TIMEZONE = ZoneInfo("Asia/Manila")
 CAPTURE_DIR = os.path.join(BASE_DIR, "assets", "captures")
@@ -310,33 +309,19 @@ def send_device_command(command):
             return False
 
 
-def set_camera_cover(opened, wait_for_position=False):
-    """Set the ESP32 cover position, optionally waiting for fresh telemetry."""
+def set_camera_cover(opened):
+    """Request a cover position without making camera access depend on telemetry."""
     with state_lock:
         state["camera_cover_requested_open"] = bool(opened)
         state["camera_cover_reported_monotonic"] = 0.0
     send_device_command({"camera_cover": bool(opened)})
 
-    if not wait_for_position:
-        return True
 
-    deadline = time.monotonic() + CAMERA_COVER_CONFIRM_TIMEOUT_SECONDS
-    while time.monotonic() < deadline:
-        with state_lock:
-            report_is_fresh = time.monotonic() - state["camera_cover_reported_monotonic"] <= CAMERA_COVER_CONFIRM_TIMEOUT_SECONDS
-            position_matches = state["camera_cover_open"] is bool(opened)
-            stopped = not state["camera_cover_moving"]
-        if report_is_fresh and position_matches and stopped:
-            return True
-        time.sleep(0.1)
-    return False
-
-
-def sync_camera_cover(wait_for_position=False):
+def sync_camera_cover():
     """Keep the cover open while either camera use owns the camera."""
     with state_lock:
         should_be_open = state["stream_active"] or state["capture_in_progress"]
-    return set_camera_cover(should_be_open, wait_for_position=wait_for_position)
+    set_camera_cover(should_be_open)
 
 
 def serial_reader_thread():
@@ -688,9 +673,7 @@ def run_daily_capture(force=False):
         state["capture_in_progress"] = True
         stream_was_active = state["stream_active"]
     try:
-        if not sync_camera_cover(wait_for_position=True):
-            print("[CAPTURE] Camera cover did not reach the open position; capture cancelled.")
-            return False
+        sync_camera_cover()
         if stream_was_active:
             print("[CAPTURE] Stopping live stream to prioritize image capture.")
             release_camera()
@@ -1001,10 +984,7 @@ def video_feed():
             return jsonify({"error": "camera stream already active"}), 503
         state["stream_active"] = True
 
-    if not sync_camera_cover(wait_for_position=True):
-        print("[CAMERA] Camera cover did not reach the open position; stream cancelled.")
-        release_camera()
-        return jsonify({"error": "camera cover is not ready"}), 503
+    sync_camera_cover()
 
     response = Response(generate_camera_stream(), mimetype="multipart/x-mixed-replace; boundary=frame")
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
