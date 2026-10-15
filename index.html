@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://cdn.socket.io" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./css/style.css?v=23">
+  <link rel="stylesheet" href="./css/style.css?v=24">
 </head>
 
 <body>
@@ -466,9 +466,9 @@
                     <span class="setting-label">Notifications</span>
                   </div>
                   <div class="setting-right-side">
-                    <span id="notif-status-text" class="setting-status-text">Enabled</span>
+                    <span id="notif-status-text" class="setting-status-text">Disabled</span>
                     <label class="switch-control">
-                      <input id="setting-notif-toggle" type="checkbox" checked>
+                      <input id="setting-notif-toggle" type="checkbox">
                       <span class="slider-knob"></span>
                     </label>
                   </div>
@@ -807,7 +807,7 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Application Scripts -->
-  <script src="./js/app.js?v=29" defer></script>
+  <script src="./js/app.js?v=30" defer></script>
   <script>
     // Register Service Worker for PWA
     if ('serviceWorker' in navigator) {

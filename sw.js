@@ -5,7 +5,7 @@
  * with an offline fallback to the app shell.
  */
 
-const CACHE_NAME = "azollasense-v12";
+const CACHE_NAME = "azollasense-v13";
 const APP_BASE = new URL("./", self.registration.scope);
 const appPath = (path) => new URL(path.replace(/^\//, ""), APP_BASE).href;
 
@@ -13,8 +13,8 @@ const CORE_ASSETS = [
   "./",
   "./index.html",
   "./login.html",
-  "./css/style.css?v=21",
-  "./js/app.js?v=27",
+  "./css/style.css?v=24",
+  "./js/app.js?v=30",
   "./js/auth.js?v=2",
   "./manifest.json",
   "./assets/logo.png",
@@ -90,4 +90,44 @@ self.addEventListener("fetch", (event) => {
           })
     )
   );
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try { payload = event.data ? event.data.json() : {}; }
+  catch (_) { payload = { body: event.data?.text() || "A system status changed." }; }
+  const show = async () => {
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const dashboardIsVisible = windows.some((client) => {
+      try {
+        const url = new URL(client.url);
+        return url.origin === self.location.origin && !url.pathname.endsWith("/login") && client.visibilityState === "visible";
+      } catch (_) { return false; }
+    });
+    // The dashboard polls alert transitions and renders an in-page toast while visible.
+    if (dashboardIsVisible) return;
+    await self.registration.showNotification(payload.title || "AzollaSense system alert", {
+      body: payload.body || "A system status changed.",
+      icon: appPath("assets/logo.png"),
+      badge: appPath("assets/logo.png"),
+      tag: payload.tag || "azollasense-system-alert",
+      data: { url: appPath("./") }
+    });
+  };
+  event.waitUntil(show());
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = event.notification.data?.url || appPath("./");
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const client of windows) {
+      if (new URL(client.url).origin === self.location.origin && "focus" in client) {
+        await client.navigate(target);
+        return client.focus();
+      }
+    }
+    return self.clients.openWindow(target);
+  })());
 });

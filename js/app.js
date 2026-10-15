@@ -166,12 +166,15 @@
     const container = byId("toast-container");
     if (!container) return;
 
-    const existing = qs(".toast", container);
-    if (existing) existing.remove();
-
     const toast = document.createElement("div");
     toast.className = "toast";
-    toast.innerHTML = `<span aria-hidden="true">🌿</span> ${message}`;
+    toast.setAttribute("role", "status");
+    const icon = document.createElement("span");
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = "🌿";
+    const text = document.createElement("span");
+    text.textContent = message;
+    toast.append(icon, text);
     container.appendChild(toast);
     setTimeout(() => toast.remove(), 3500);
   }
@@ -360,6 +363,13 @@
 
   socket.on("browning_capture_updated", loadLatestBrowningCapture);
 
+  let alertCursor = 0;
+  const alertListenStartedAt = Date.now() / 1000;
+  function displaySystemAlert(alert) {
+    if (!notifToggle?.checked || !alert || typeof alert.body !== "string") return;
+    showToast(`${alert.title ? `${alert.title}: ` : ""}${alert.body}`);
+  }
+
   socket.on("telemetry_update", (data) => {
     const setValues = (selector, text) => qsa(selector).forEach((el) => { el.textContent = text; });
 
@@ -423,6 +433,8 @@
 
   });
 
+  socket.on("system_alert", displaySystemAlert);
+
   const actuatorInputs = {
     motor: byId("motor-switch"),
     solenoid: byId("solenoid-switch"),
@@ -460,10 +472,13 @@
 
   async function refreshLocalState() {
     try {
-      const response = await fetch(backendUrl("/api/state"), { cache: "no-store", credentials: "same-origin" });
+      const query = `?alerts_after=${encodeURIComponent(alertCursor)}${alertCursor === 0 ? `&alerts_since=${encodeURIComponent(alertListenStartedAt)}` : ""}`;
+      const response = await fetch(backendUrl(`/api/state${query}`), { cache: "no-store", credentials: "same-origin" });
       if (response.status === 401) { location.replace("/login"); return; }
       if (!response.ok) throw new Error("Local server unavailable");
       const data = await response.json();
+      (data.alerts || []).forEach(displaySystemAlert);
+      alertCursor = data.alert_cursor ?? alertCursor;
       localSocketHandlers.telemetry_update?.(data.telemetry);
       localSocketHandlers.actuator_update?.(data.actuators);
       localSocketHandlers.sensor_settings?.(data.settings);
@@ -537,9 +552,80 @@
 
   const notifToggle = byId("setting-notif-toggle");
   const notifStatusText = byId("notif-status-text");
+  function decodeVapidKey(encoded) {
+    const base64 = encoded.replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(base64 + "=".repeat((4 - base64.length % 4) % 4));
+    return Uint8Array.from(raw, (char) => char.charCodeAt(0));
+  }
+  async function getPushSubscriptionStatus(subscription) {
+    const endpoint = subscription?.endpoint || "";
+    const response = await fetch(backendUrl(`/api/push/status?endpoint=${encodeURIComponent(endpoint)}`), { cache: "no-store", credentials: "same-origin" });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Could not check notification setup.");
+    return result;
+  }
+  async function enablePushNotifications() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      throw new Error("This browser does not support push notifications.");
+    }
+    if (!window.isSecureContext) throw new Error("Notifications require HTTPS or localhost.");
+    const registration = await navigator.serviceWorker.ready;
+    const current = await registration.pushManager.getSubscription();
+    const status = await getPushSubscriptionStatus(current);
+    if (!status.available || !status.public_key) throw new Error("Browser push is not configured on this server.");
+    let permission = Notification.permission;
+    if (permission === "default") permission = await Notification.requestPermission();
+    if (permission !== "granted") throw new Error("Notification permission was denied. Allow notifications in browser settings to enable alerts.");
+    const subscription = current || await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: decodeVapidKey(status.public_key)
+    });
+    const response = await fetch(backendUrl("/api/push/subscription"), {
+      method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(subscription.toJSON())
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+      if (!current) await subscription.unsubscribe().catch(() => {});
+      throw new Error(result.error || "Could not save this browser's notification subscription.");
+    }
+  }
+  async function disablePushNotifications() {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    if (!subscription) return;
+    const response = await fetch(backendUrl("/api/push/subscription"), {
+      method: "DELETE", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: subscription.endpoint })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Could not disable browser notifications.");
+    await subscription.unsubscribe();
+  }
   if (notifToggle && notifStatusText) {
-    notifToggle.addEventListener("change", () => {
-      notifStatusText.textContent = notifToggle.checked ? "Enabled" : "Disabled";
+    if ("serviceWorker" in navigator) navigator.serviceWorker.ready.then(async (registration) => {
+      try {
+        const subscription = await registration.pushManager.getSubscription();
+        const status = await getPushSubscriptionStatus(subscription);
+        notifToggle.checked = Boolean(subscription && status.subscribed);
+        notifStatusText.textContent = notifToggle.checked ? "Enabled" : "Disabled";
+        if (!status.available && !notifToggle.checked) notifStatusText.title = "Server push settings are not configured.";
+      } catch (error) { console.warn("Could not load notification preference:", error); }
+    });
+    notifToggle.addEventListener("change", async () => {
+      const enabling = notifToggle.checked;
+      notifToggle.disabled = true;
+      try {
+        if (enabling) await enablePushNotifications();
+        else await disablePushNotifications();
+        notifStatusText.textContent = enabling ? "Enabled" : "Disabled";
+        notifStatusText.title = "";
+        showToast(enabling ? "System notifications enabled." : "System notifications disabled.");
+      } catch (error) {
+        notifToggle.checked = !enabling;
+        notifStatusText.textContent = notifToggle.checked ? "Enabled" : "Disabled";
+        showToast(error.message || "Could not update notification settings.");
+      } finally { notifToggle.disabled = false; }
     });
   }
 

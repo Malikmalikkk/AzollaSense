@@ -17,6 +17,8 @@ import sqlite3
 import signal
 import threading
 import time
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -32,6 +34,11 @@ from flask_socketio import SocketIO
 from ultralytics import YOLO
 import serial
 from serial.tools import list_ports
+try:
+    from pywebpush import WebPushException, webpush
+except ImportError:
+    WebPushException = Exception
+    webpush = None
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "runs", "segment", "train", "weights", "best_ncnn_model")
@@ -66,6 +73,134 @@ LOG_SAMPLE_INTERVAL_SECONDS = 30
 LOG_SENSOR_FRESH_SECONDS = 30
 LOG_CAMERA_FRESH_SECONDS = 10
 LOG_RETENTION_DAYS = 90
+PUSH_DB_PATH = os.path.join(app.instance_path, "push_subscriptions.sqlite3")
+PUSH_DB_LOCK = threading.RLock()
+VAPID_PUBLIC_KEY = os.environ.get("AZOLLASENSE_VAPID_PUBLIC_KEY", "").strip()
+VAPID_PRIVATE_KEY = os.environ.get("AZOLLASENSE_VAPID_PRIVATE_KEY", "").strip()
+VAPID_SUBJECT = os.environ.get("AZOLLASENSE_VAPID_SUBJECT", "").strip()
+push_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="web-push")
+alert_state_lock = threading.RLock()
+previous_alert_states = None
+system_alert_history = deque(maxlen=100)
+system_alert_sequence = 0
+
+
+def init_push_db():
+    with PUSH_DB_LOCK, sqlite3.connect(PUSH_DB_PATH, timeout=10) as connection:
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("CREATE TABLE IF NOT EXISTS push_subscriptions (endpoint TEXT PRIMARY KEY, subscription_json TEXT NOT NULL, created_at TEXT NOT NULL)")
+
+
+init_push_db()
+if os.name != "nt":
+    os.chmod(PUSH_DB_PATH, 0o600)
+
+
+def _send_web_push(payload):
+    if webpush is None or not (VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY and VAPID_SUBJECT):
+        return
+    with PUSH_DB_LOCK, sqlite3.connect(PUSH_DB_PATH, timeout=10) as connection:
+        rows = connection.execute("SELECT endpoint, subscription_json FROM push_subscriptions").fetchall()
+    for endpoint, raw_subscription in rows:
+        try:
+            webpush(json.loads(raw_subscription), json.dumps(payload), VAPID_PRIVATE_KEY,
+                    vapid_claims={"sub": VAPID_SUBJECT})
+        except WebPushException as exc:
+            response = getattr(exc, "response", None)
+            if response is not None and response.status_code in (404, 410):
+                with PUSH_DB_LOCK, sqlite3.connect(PUSH_DB_PATH, timeout=10) as connection:
+                    connection.execute("DELETE FROM push_subscriptions WHERE endpoint=?", (endpoint,))
+            else:
+                print(f"[PUSH] Delivery failed: {exc}")
+        except Exception as exc:
+            print(f"[PUSH] Delivery failed: {exc}")
+
+
+def _emit_system_alert(title, body, severity="warning"):
+    global system_alert_sequence
+    payload = {"title": title, "body": body, "severity": severity,
+               "tag": f"azollasense-{int(time.time() * 1000)}", "created_at": time.time()}
+    with alert_state_lock:
+        system_alert_sequence += 1
+        payload["id"] = system_alert_sequence
+        system_alert_history.append(payload)
+    socketio.emit("system_alert", payload)
+    if webpush is not None and VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY and VAPID_SUBJECT:
+        push_executor.submit(_send_web_push, payload)
+
+
+def _evaluate_alert_transitions(telemetry, actuators, settings):
+    """Emit alerts on transitions only; seed silently until one valid sample arrives."""
+    global previous_alert_states
+    try:
+        observed_at = datetime.fromisoformat(telemetry.get("sensor_updated_at"))
+        if observed_at.tzinfo is None:
+            observed_at = observed_at.replace(tzinfo=PH_TIMEZONE)
+        fresh = (actuators.get("device_connected") is True and
+                 0 <= (datetime.now(PH_TIMEZONE) - observed_at.astimezone(PH_TIMEZONE)).total_seconds() <= LOG_SENSOR_FRESH_SECONDS)
+    except (TypeError, ValueError):
+        fresh = False
+    if not fresh:
+        return
+
+    def number(key):
+        value = telemetry.get(key)
+        return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else None
+
+    ph, water, lux = number("ph"), number("water_level"), number("lux")
+    current = {}
+    if ph is not None:
+        current["ph"] = "low" if ph < settings["ph_min"] else "high" if ph > settings["ph_max"] else "ok"
+    if water is not None:
+        current["water"] = "low" if water < settings["water_min_cm"] else "high" if water > settings["water_max_cm"] else "ok"
+    if lux is not None:
+        prior_light = previous_alert_states.get("light") if previous_alert_states else None
+        current["light"] = "high" if lux >= (settings["canopy_release_lux"] if prior_light == "high" else settings["canopy_deploy_lux"]) else "normal"
+    pump_on = bool(actuators.get("pump_manual") or actuators.get("pump_auto_running") or actuators.get("pump"))
+    current["pump"] = "on" if pump_on else "off"
+    current["canopy"] = "deployed" if actuators.get("motor") else "retracted"
+
+    with alert_state_lock:
+        previous = previous_alert_states
+        previous_alert_states = {**(previous or {}), **current}
+    if previous is None:
+        return
+
+    events = []
+    for key, value in current.items():
+        old = previous.get(key)
+        if old is None or old == value:
+            continue
+        if key == "ph" and value in ("low", "high"):
+            events.append(("Water pH warning", f"pH is {value}; reading {ph:g}, configured range {settings['ph_min']:g}–{settings['ph_max']:g}.", "warning"))
+        elif key == "ph" and old != "ok":
+            events.append(("pH back in range", "Water pH has returned to its configured range.", "success"))
+        elif key == "water" and value == "low":
+            if current.get("pump") == "on" and previous.get("pump") != "on":
+                events.append(("Low water level", f"Water level is {water:g} cm; pump started.", "warning"))
+            else:
+                events.append(("Low water level", f"Water level is {water:g} cm, below the configured minimum.", "warning"))
+        elif key == "water" and value == "high":
+            events.append(("High water level", f"Water level is {water:g} cm, above the configured maximum.", "warning"))
+        elif key == "water" and old != "ok":
+            events.append(("Water level recovered", "Water level has returned to its configured range.", "success"))
+        elif key == "light" and value == "high":
+            events.append(("High light intensity", "Light is above the canopy deploy threshold.", "warning"))
+        elif key == "light" and old == "high":
+            events.append(("Light intensity normal", "Light has fallen below the canopy release threshold.", "success"))
+        elif key == "pump" and value == "on" and previous.get("water") != "low":
+            if actuators.get("pump_auto_running") and water is not None and water <= settings["pump_target_cm"]:
+                events.append(("Low water level", f"Water level is {water:g} cm; automatic pump started.", "warning"))
+            else:
+                events.append(("Pump started", "Pump is now running.", "info"))
+        elif key == "pump" and value == "off":
+            events.append(("Pump stopped", "Pump is no longer running.", "info"))
+        elif key == "canopy" and value == "deployed":
+            events.append(("Canopy deployed", "Canopy is now open.", "info"))
+        elif key == "canopy" and value == "retracted":
+            events.append(("Canopy retracted", "Canopy is now closed.", "info"))
+    for event in events:
+        _emit_system_alert(*event)
 
 
 @contextmanager
@@ -953,6 +1088,10 @@ def sensor_thread():
         time.sleep(2)
         with state_lock:
             payload = dict(state["telemetry"])
+            actuators = dict(state["actuators"])
+        with settings_lock:
+            settings = dict(sensor_settings)
+        _evaluate_alert_transitions(payload, actuators, settings)
         socketio.emit("telemetry_update", payload)
 
 
@@ -1282,7 +1421,7 @@ def api_export_telemetry_logs():
 @app.route("/api/state")
 def api_local_state():
     with state_lock, settings_lock:
-        return jsonify({
+        result = {
             "telemetry": dict(state["telemetry"]),
             "actuators": dict(state["actuators"]),
             "settings": dict(sensor_settings),
@@ -1291,7 +1430,59 @@ def api_local_state():
                 "open": state["camera_cover_open"],
                 "moving": state["camera_cover_moving"],
             },
-        })
+        }
+    try:
+        after = max(0, int(request.args.get("alerts_after", "0")))
+    except ValueError:
+        after = 0
+    try:
+        since = max(0.0, float(request.args.get("alerts_since", "0")))
+    except ValueError:
+        since = 0.0
+    with alert_state_lock:
+        result["alert_cursor"] = system_alert_sequence
+        result["alerts"] = ([dict(alert) for alert in system_alert_history
+                             if alert["id"] > after and alert.get("created_at", 0) >= since]
+                            if "alerts_after" in request.args else [])
+    return jsonify(result)
+
+
+@app.route("/api/push/status")
+def api_push_status():
+    subscription = request.args.get("endpoint", "")
+    with PUSH_DB_LOCK, sqlite3.connect(PUSH_DB_PATH, timeout=10) as connection:
+        subscribed = bool(subscription and connection.execute(
+            "SELECT 1 FROM push_subscriptions WHERE endpoint=?", (subscription,)
+        ).fetchone())
+    return no_store(jsonify({"public_key": VAPID_PUBLIC_KEY, "subscribed": subscribed,
+                             "available": bool(webpush and VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY and VAPID_SUBJECT)}))
+
+
+@app.route("/api/push/subscription", methods=["POST", "DELETE"])
+def api_push_subscription():
+    if request.method == "DELETE":
+        data = request.get_json(silent=True) or {}
+        endpoint = data.get("endpoint")
+        if not isinstance(endpoint, str) or len(endpoint) > 4096:
+            return jsonify({"error": "A valid subscription endpoint is required."}), 400
+        with PUSH_DB_LOCK, sqlite3.connect(PUSH_DB_PATH, timeout=10) as connection:
+            connection.execute("DELETE FROM push_subscriptions WHERE endpoint=?", (endpoint,))
+        return no_store(jsonify({"success": True}))
+
+    if not (webpush and VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY and VAPID_SUBJECT):
+        return jsonify({"error": "Browser push is not configured on this server."}), 503
+    subscription = request.get_json(silent=True)
+    if not isinstance(subscription, dict):
+        return jsonify({"error": "A valid browser subscription is required."}), 400
+    endpoint = subscription.get("endpoint")
+    keys = subscription.get("keys")
+    if (not isinstance(endpoint, str) or not endpoint.startswith("https://") or len(endpoint) > 4096 or
+            not isinstance(keys, dict) or not isinstance(keys.get("p256dh"), str) or not isinstance(keys.get("auth"), str)):
+        return jsonify({"error": "The browser subscription is incomplete or invalid."}), 400
+    with PUSH_DB_LOCK, sqlite3.connect(PUSH_DB_PATH, timeout=10) as connection:
+        connection.execute("INSERT INTO push_subscriptions(endpoint,subscription_json,created_at) VALUES (?,?,?) ON CONFLICT(endpoint) DO UPDATE SET subscription_json=excluded.subscription_json",
+                           (endpoint, json.dumps(subscription), datetime.now(timezone.utc).isoformat()))
+    return no_store(jsonify({"success": True}))
 
 
 @app.route("/api/vision", methods=["POST"])

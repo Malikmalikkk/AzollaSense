@@ -1464,6 +1464,10 @@ input:checked+.slider-knob::before {
   transform: translateX(-50%);
   z-index: 2000;
   pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
 }
 
 .toast {
@@ -1477,6 +1481,9 @@ input:checked+.slider-knob::before {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: max-content;
+  max-width: 100%;
+  box-sizing: border-box;
   animation: toastIn 0.3s ease, toastOut 0.3s ease 2.7s forwards;
 }
 
