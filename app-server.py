@@ -441,6 +441,7 @@ def sample_telemetry_once(now=None, monotonic_now=None):
 serial_lock = threading.Lock()
 serial_device = None
 serial_ready = False
+ph_exchange_stage = "idle"
 device_preferences = {
     "motor": False,
     "pump_manual": False,
@@ -671,9 +672,36 @@ def serial_reader_thread():
                         state["actuators"]["canopy_motor_running"] = bool(message["motor_running"])
                     state["actuators"]["device_connected"] = True
 
+                    # Replace out-of-range water in two stages. Drain to the
+                    # configured minimum, then refill to the pump target plus
+                    # its stop margin. Wait for pH to recover before starting
+                    # another exchange cycle.
+                    global ph_exchange_stage
+                    ph_out_of_range = ph is not None and (ph < settings["ph_min"] or ph > settings["ph_max"])
+                    ph_in_range = ph is not None and settings["ph_min"] <= ph <= settings["ph_max"]
+                    if ph_exchange_stage == "idle" and ph_out_of_range:
+                        ph_exchange_stage = "draining"
+                    if ph_exchange_stage == "draining":
+                        state["actuators"]["solenoid"] = True
+                        state["actuators"]["pump_auto_running"] = False
+                        if water_level is not None and water_level <= settings["water_min_cm"]:
+                            state["actuators"]["solenoid"] = False
+                            state["actuators"]["pump_auto_running"] = True
+                            ph_exchange_stage = "refilling"
+                    elif ph_exchange_stage == "refilling":
+                        state["actuators"]["solenoid"] = False
+                        state["actuators"]["pump_auto_running"] = True
+                        if water_level is not None and water_level >= settings["pump_target_cm"] + settings["pump_hysteresis_cm"]:
+                            state["actuators"]["pump_auto_running"] = False
+                            ph_exchange_stage = "wait_in_range"
+                    elif ph_exchange_stage == "wait_in_range" and ph_in_range:
+                        ph_exchange_stage = "idle"
+
                     pump_was_running = state["actuators"].get("pump_auto_running", False)
                     pump_should_run = pump_was_running
-                    if not state["actuators"].get("pump_auto") or state["actuators"].get("solenoid"):
+                    if ph_exchange_stage in ("draining", "refilling"):
+                        pump_should_run = ph_exchange_stage == "refilling"
+                    elif not state["actuators"].get("pump_auto") or state["actuators"].get("solenoid"):
                         pump_should_run = False
                     elif water_level is not None:
                         if not pump_was_running and water_level <= settings["pump_target_cm"]:
