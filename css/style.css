@@ -991,6 +991,23 @@ body::before {
   margin-bottom: 16px;
 }
 
+.recent-notifications { max-height: 390px; overflow-y: auto; padding: 2px; }
+.notification-card {
+  padding: 12px 14px;
+  border: 1px solid;
+  border-left-width: 5px;
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+}
+.notification-card-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.notification-card-heading strong { font-size: 14px; }
+.notification-card-heading time { flex: 0 0 auto; font-size: 11px; opacity: .75; }
+.notification-card p { margin: 5px 0 0; font-size: 13px; line-height: 1.45; }
+.notification-warning, .notification-critical, .notification-error { color: #8e3200; background: #fff3e0; border-color: #ffb74d; }
+.notification-success { color: #1b5e20; background: #e8f5e9; border-color: #81c784; }
+.notification-info { color: #0d477a; background: #e3f2fd; border-color: #64b5f6; }
+.notifications-empty { margin: 0; padding: 14px; color: var(--text-muted); text-align: center; }
+
 .log-item-card {
   display: flex;
   align-items: center;

@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://cdn.socket.io" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./css/style.css?v=24">
+  <link rel="stylesheet" href="./css/style.css?v=25">
 </head>
 
 <body>
@@ -401,7 +401,7 @@
 
           </div>
 
-          <!-- Recent Logs Section -->
+          <!-- Recent Notifications Section -->
           <div class="logs-header-row">
             <div class="logs-title-group">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -412,14 +412,12 @@
                 <line x1="16" y1="17" x2="8" y2="17"></line>
                 <polyline points="10 9 9 9 8 9"></polyline>
               </svg>
-              <span>Recent Logs</span>
+              <span>Recent Notifications</span>
             </div>
-            <a href="#" id="view-all-logs-btn" class="view-all-link">View All &gt;</a>
           </div>
 
-          <div class="logs-list recent-logs-summary">
-            <p>Telemetry readings are saved every 30 seconds and kept for 90 days.</p>
-            <button id="open-telemetry-history" class="view-all-link" type="button">Open telemetry history &gt;</button>
+          <div id="recent-notifications" class="logs-list recent-notifications" aria-live="polite" aria-label="Latest system notifications">
+            <p class="notifications-empty">No notifications yet.</p>
           </div>
 
         </section>
@@ -807,7 +805,7 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Application Scripts -->
-  <script src="./js/app.js?v=31" defer></script>
+  <script src="./js/app.js?v=32" defer></script>
   <script>
     // Register Service Worker for PWA
     if ('serviceWorker' in navigator) {

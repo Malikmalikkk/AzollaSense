@@ -1441,9 +1441,12 @@ def api_local_state():
         since = 0.0
     with alert_state_lock:
         result["alert_cursor"] = system_alert_sequence
-        result["alerts"] = ([dict(alert) for alert in system_alert_history
-                             if alert["id"] > after and alert.get("created_at", 0) >= since]
-                            if "alerts_after" in request.args else [])
+        if "alerts_recent" in request.args:
+            result["alerts"] = [dict(alert) for alert in list(system_alert_history)[-10:]]
+        else:
+            result["alerts"] = ([dict(alert) for alert in system_alert_history
+                                 if alert["id"] > after and alert.get("created_at", 0) >= since]
+                                if "alerts_after" in request.args else [])
     return jsonify(result)
 
 

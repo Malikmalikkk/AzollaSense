@@ -365,9 +365,50 @@
 
   let alertCursor = 0;
   const alertListenStartedAt = Date.now() / 1000;
+  const recentNotifications = byId("recent-notifications");
+  const recentAlertItems = new Map();
+
+  function addRecentNotification(alert) {
+    if (!recentNotifications || !alert || typeof alert.body !== "string") return;
+    const id = alert.id ?? `${alert.created_at}-${alert.title}`;
+    if (recentAlertItems.has(id)) return;
+    const severity = ["success", "info", "warning", "error", "critical"].includes(alert.severity)
+      ? alert.severity : "info";
+    const item = document.createElement("article");
+    item.className = `notification-card notification-${severity}`;
+    item.dataset.alertId = String(id);
+    const heading = document.createElement("div");
+    heading.className = "notification-card-heading";
+    const title = document.createElement("strong");
+    title.textContent = alert.title || "System notification";
+    const time = document.createElement("time");
+    const createdAt = Number(alert.created_at);
+    if (Number.isFinite(createdAt)) {
+      const date = new Date(createdAt * 1000);
+      time.dateTime = date.toISOString();
+      time.textContent = new Intl.DateTimeFormat("en-PH", {
+        timeZone: "Asia/Manila", dateStyle: "medium", timeStyle: "short"
+      }).format(date);
+    }
+    const body = document.createElement("p");
+    body.textContent = alert.body;
+    heading.append(title, time);
+    item.append(heading, body);
+    recentAlertItems.set(id, item);
+    recentNotifications.querySelector(".notifications-empty")?.remove();
+    recentNotifications.prepend(item);
+    while (recentAlertItems.size > 10) {
+      const oldestId = recentAlertItems.keys().next().value;
+      recentAlertItems.get(oldestId)?.remove();
+      recentAlertItems.delete(oldestId);
+    }
+  }
+
   function displaySystemAlert(alert) {
-    if (!notifToggle?.checked || !alert || typeof alert.body !== "string") return;
-    showToast(`${alert.title ? `${alert.title}: ` : ""}${alert.body}`);
+    addRecentNotification(alert);
+    if (notifToggle?.checked && alert && typeof alert.body === "string") {
+      showToast(`${alert.title ? `${alert.title}: ` : ""}${alert.body}`);
+    }
   }
 
   socket.on("telemetry_update", (data) => {
@@ -472,12 +513,17 @@
 
   async function refreshLocalState() {
     try {
-      const query = `?alerts_after=${encodeURIComponent(alertCursor)}${alertCursor === 0 ? `&alerts_since=${encodeURIComponent(alertListenStartedAt)}` : ""}`;
+      const query = alertCursor === 0
+        ? "?alerts_recent=10"
+        : `?alerts_after=${encodeURIComponent(alertCursor)}&alerts_since=${encodeURIComponent(alertListenStartedAt)}`;
       const response = await fetch(backendUrl(`/api/state${query}`), { cache: "no-store", credentials: "same-origin" });
       if (response.status === 401) { location.replace("/login"); return; }
       if (!response.ok) throw new Error("Local server unavailable");
       const data = await response.json();
-      (data.alerts || []).forEach(displaySystemAlert);
+      (data.alerts || []).forEach((alert) => {
+        if (alertCursor === 0) addRecentNotification(alert);
+        else displaySystemAlert(alert);
+      });
       alertCursor = data.alert_cursor ?? alertCursor;
       localSocketHandlers.telemetry_update?.(data.telemetry);
       localSocketHandlers.actuator_update?.(data.actuators);
