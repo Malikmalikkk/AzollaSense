@@ -600,6 +600,8 @@ def sync_camera_cover():
 def serial_reader_thread():
     """Read ESP32 JSON telemetry and keep the existing dashboard state current."""
     global serial_device, serial_ready
+    last_telemetry_at = None
+    telemetry_timeout_seconds = 10
     while True:
         try:
             if serial_device is None or not serial_device.is_open:
@@ -609,6 +611,7 @@ def serial_reader_thread():
                     continue
                 serial_device = serial.Serial(port, SERIAL_BAUD, timeout=1)
                 serial_ready = False
+                last_telemetry_at = time.monotonic()
                 time.sleep(2)  # allow ESP32 to restart after USB serial opens
                 with serial_lock:
                     with state_lock:
@@ -630,6 +633,9 @@ def serial_reader_thread():
                 print(f"[SERIAL] Connected to ESP32 on {port}")
             line = serial_device.readline().decode("utf-8", errors="ignore").strip()
             if not line:
+                if (last_telemetry_at is not None
+                        and time.monotonic() - last_telemetry_at > telemetry_timeout_seconds):
+                    raise serial.SerialException("ESP32 telemetry timed out")
                 continue
             try:
                 message = json.loads(line)
@@ -637,6 +643,7 @@ def serial_reader_thread():
                 print(f"[SERIAL] Ignoring non-JSON line: {line[:120]}")
                 continue
             if message.get("type") == "telemetry":
+                last_telemetry_at = time.monotonic()
                 with settings_lock:
                     settings = dict(sensor_settings)
 
@@ -758,6 +765,7 @@ def serial_reader_thread():
                     pass
                 serial_device = None
                 serial_ready = False
+                last_telemetry_at = None
             with state_lock:
                 state["actuators"]["device_connected"] = False
                 state["camera_cover_open"] = None
