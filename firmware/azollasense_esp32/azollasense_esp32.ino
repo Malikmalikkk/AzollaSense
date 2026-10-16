@@ -19,6 +19,7 @@
 
 // ESP32-WROOM example wiring. GPIO numbers may differ on other boards.
 constexpr int PH_PIN = 34;       // PH-4502C conditioned analog output
+constexpr int RAIN_SENSOR_PIN = 35; // water sensor D5 through a voltage divider
 constexpr int ONE_WIRE_PIN = 4;  // DS18B20 data; add 4.7k pull-up to 3V3
 constexpr int SONAR_TRIG_PIN = 5;
 constexpr int SONAR_ECHO_PIN = 18; // JSN-SR04T echo must be level-shifted to 3V3
@@ -142,13 +143,23 @@ float readWaterDistanceCm() {
   return duration * 0.0343f / 2.0f;
 }
 
-void sendTelemetry(float waterDistance, float temperature, float phVoltage, float lux) {
-  StaticJsonDocument<384> doc;
+int readRainSensorRaw() {
+  uint32_t sum = 0;
+  for (int i = 0; i < 16; ++i) {
+    sum += analogRead(RAIN_SENSOR_PIN);
+    delay(2);
+  }
+  return static_cast<int>((sum + 8) / 16);
+}
+
+void sendTelemetry(float waterDistance, float temperature, float phVoltage, float lux, int rainSensorRaw) {
+  StaticJsonDocument<512> doc;
   doc["type"] = "telemetry";
   if (isfinite(waterDistance)) doc["water_distance_cm"] = waterDistance;
   if (isfinite(temperature)) doc["temperature"] = temperature;
   if (isfinite(phVoltage)) doc["ph_voltage"] = phVoltage;
   if (isfinite(lux)) doc["lux"] = lux;
+  doc["rain_sensor_raw"] = rainSensorRaw;
   doc["canopy_deployed"] = canopyDeployed;
   doc["solenoid"] = solenoidOn;
   doc["pump"] = pumpOutput;
@@ -222,6 +233,7 @@ void setup() {
   setRelay(PUMP_RELAY_PIN, false);
   pinMode(SONAR_TRIG_PIN, OUTPUT);
   pinMode(SONAR_ECHO_PIN, INPUT);
+  pinMode(RAIN_SENSOR_PIN, INPUT);
   pinMode(CANOPY_CLOSED_LIMIT_PIN, INPUT_PULLDOWN);
   pinMode(CANOPY_OPEN_LIMIT_PIN, INPUT_PULLDOWN);
   const bool closedAtStartup = digitalRead(CANOPY_CLOSED_LIMIT_PIN) == HIGH;
@@ -275,6 +287,7 @@ void loop() {
   }
 
   const float distance = readWaterDistanceCm();
+  const int rainSensorRaw = readRainSensorRaw();
   waterTemp.requestTemperatures();
   const float temperature = waterTemp.getTempCByIndex(0);
   const float phVoltage = readPhVoltage();
@@ -286,7 +299,7 @@ void loop() {
 
   if (now - lastTelemetryAt >= TELEMETRY_INTERVAL_MS) {
     lastTelemetryAt = now;
-    sendTelemetry(distance, temperature, phVoltage, lux);
+    sendTelemetry(distance, temperature, phVoltage, lux, rainSensorRaw);
   }
   delay(20);
 }

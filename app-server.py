@@ -330,6 +330,10 @@ state = {
         "brown_cov": 0.0,
         "total_cov": 0.0,
         "lux": None,
+        "rain_sensor_raw": None,
+        "rain_detected": None,
+        "rain_protection_active": False,
+        "rain_dry_remaining_seconds": None,
         "sensor_updated_at": None,
     },
     "cv_updated_monotonic": None,
@@ -439,6 +443,10 @@ serial_lock = threading.Lock()
 serial_device = None
 serial_ready = False
 ph_exchange_stage = "idle"
+rain_protection_active = False
+rain_dry_since_monotonic = None
+rain_wet_sample_count = 0
+rain_release_pending = False
 device_preferences = {
     "motor": False,
     "pump_manual": False,
@@ -459,6 +467,8 @@ SENSOR_SETTINGS_DEFAULTS = {
     "pump_hysteresis_cm": 2.0,
     "canopy_deploy_lux": 45000.0,
     "canopy_release_lux": 35000.0,
+    "rain_wet_threshold": 2000.0,
+    "rain_wet_below_threshold": 0.0,
     "browning_alert_pct": 10.0,
     "ph7_voltage": 2.5,
     "ph4_voltage": 3.026,
@@ -596,7 +606,9 @@ def sync_camera_cover():
 
 def serial_reader_thread():
     """Read ESP32 JSON telemetry and keep the existing dashboard state current."""
-    global serial_device, serial_ready
+    global serial_device, serial_ready, ph_exchange_stage
+    global rain_protection_active, rain_dry_since_monotonic
+    global rain_wet_sample_count, rain_release_pending
     last_telemetry_at = None
     telemetry_timeout_seconds = 10
     while True:
@@ -656,6 +668,15 @@ def serial_reader_thread():
                       if ph_voltage is not None and abs(ph_span) >= 0.05 else None)
                 temperature = numeric_reading("temperature")
                 lux = numeric_reading("lux")
+                rain_sensor_raw = numeric_reading("rain_sensor_raw")
+                if rain_sensor_raw is not None and not 0 <= rain_sensor_raw <= 4095:
+                    rain_sensor_raw = None
+                rain_wet = None
+                if rain_sensor_raw is not None:
+                    if settings["rain_wet_below_threshold"] == 1:
+                        rain_wet = rain_sensor_raw <= settings["rain_wet_threshold"]
+                    else:
+                        rain_wet = rain_sensor_raw >= settings["rain_wet_threshold"]
                 published_readings = {
                     "water_distance_cm": distance,
                     "water_level": water_level,
@@ -663,6 +684,7 @@ def serial_reader_thread():
                     "ph": ph,
                     "ph_voltage": ph_voltage,
                     "lux": lux,
+                    "rain_sensor_raw": rain_sensor_raw,
                 }
                 now_monotonic = time.monotonic()
                 command = {"type": "heartbeat"}
@@ -680,7 +702,25 @@ def serial_reader_thread():
                     # configured minimum, then refill to the pump target plus
                     # its stop margin. Wait for pH to recover before starting
                     # another exchange cycle.
-                    global ph_exchange_stage
+                    rain_was_active = rain_protection_active
+
+                    if rain_wet is True:
+                        rain_wet_sample_count += 1
+                        rain_dry_since_monotonic = None
+                        if rain_wet_sample_count >= 2:
+                            rain_protection_active = True
+                    elif rain_wet is False:
+                        rain_wet_sample_count = 0
+                        if rain_protection_active:
+                            if rain_dry_since_monotonic is None:
+                                rain_dry_since_monotonic = now_monotonic
+                            elif now_monotonic - rain_dry_since_monotonic >= 300:
+                                rain_protection_active = False
+                                rain_dry_since_monotonic = None
+                    if rain_was_active and not rain_protection_active:
+                        rain_release_pending = True
+                    elif rain_protection_active:
+                        rain_release_pending = False
                     ph_auto_enabled = state["actuators"].get("ph_auto", False)
                     if not ph_auto_enabled and ph_exchange_stage != "idle":
                         ph_exchange_stage = "idle"
@@ -725,7 +765,16 @@ def serial_reader_thread():
 
                     deployed = state["actuators"].get("motor", False)
                     motor_running = state["actuators"].get("canopy_motor_running", False)
-                    if state["actuators"].get("canopy_auto") and lux is not None and not motor_running:
+                    if rain_protection_active and not deployed and not motor_running:
+                        command["auto_motor"] = True
+                        state["actuators"]["motor"] = True
+                    elif not rain_protection_active and rain_release_pending and not state["actuators"].get("canopy_auto") and not motor_running:
+                        if deployed:
+                            command["auto_motor"] = False
+                            state["actuators"]["motor"] = False
+                        rain_release_pending = False
+                    elif not rain_protection_active and state["actuators"].get("canopy_auto") and lux is not None and not motor_running:
+                        rain_release_pending = False
                         if lux >= settings["canopy_deploy_lux"] and not deployed:
                             command["auto_motor"] = True
                             state["actuators"]["motor"] = True
@@ -738,17 +787,46 @@ def serial_reader_thread():
                     if should_publish:
                         state["last_telemetry_publish_monotonic"] = now_monotonic
                         for key, value in published_readings.items():
-                            if value is not None:
+                            if key == "rain_sensor_raw":
+                                state["telemetry"][key] = round(value, 0) if value is not None else None
+                            elif value is not None:
                                 state["telemetry"][key] = round(value, 2)
+                        state["telemetry"]["rain_detected"] = rain_wet
+                        state["telemetry"]["rain_protection_active"] = rain_protection_active
+                        state["telemetry"]["rain_dry_remaining_seconds"] = (
+                            max(0, int(300 - (now_monotonic - rain_dry_since_monotonic)))
+                            if rain_protection_active and rain_dry_since_monotonic is not None else None
+                        )
                         state["telemetry"]["sensor_updated_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
                     payload = dict(state["telemetry"]) if should_publish else None
+                    rain_remaining = (
+                        max(0, int(300 - (now_monotonic - rain_dry_since_monotonic)))
+                        if rain_protection_active and rain_dry_since_monotonic is not None else None
+                    )
+                    rain_update_payload = {
+                        "rain_sensor_raw": rain_sensor_raw,
+                        "rain_detected": rain_wet,
+                        "rain_protection_active": rain_protection_active,
+                        "rain_dry_remaining_seconds": rain_remaining,
+                    }
                     actuators = dict(state["actuators"])
                 send_device_command(command)
                 if payload is not None:
                     socketio.emit("telemetry_update", payload)
+                socketio.emit("rain_sensor_update", rain_update_payload)
                 socketio.emit("actuator_update", actuators)
         except (serial.SerialException, OSError) as exc:
             print(f"[SERIAL] Disconnected: {exc}")
+            if rain_protection_active:
+                # Do not count time without sensor readings toward the dry grace.
+                rain_dry_since_monotonic = None
+            rain_wet_sample_count = 0
+            socketio.emit("rain_sensor_update", {
+                "rain_sensor_raw": None,
+                "rain_detected": None,
+                "rain_protection_active": rain_protection_active,
+                "rain_dry_remaining_seconds": None,
+            })
             with serial_lock:
                 try:
                     if serial_device:
@@ -1560,12 +1638,15 @@ def api_settings():
             "water_min_cm": (0, 500), "water_max_cm": (0, 500),
             "pump_target_cm": (0, 500), "pump_hysteresis_cm": (0.1, 100),
             "canopy_deploy_lux": (0, 200000), "canopy_release_lux": (0, 200000),
+            "rain_wet_threshold": (0, 4095), "rain_wet_below_threshold": (0, 1),
             "browning_alert_pct": (0, 100), "ph7_voltage": (0, 3.3),
             "ph4_voltage": (0, 3.3), "tank_depth_cm": (1, 500),
             "water_level_offset_cm": (-100, 100),
         }[key]
         if not limits[0] <= value <= limits[1]:
             return jsonify({"success": False, "error": f"{key} is out of range."}), 400
+        if key == "rain_wet_below_threshold" and value not in (0, 1):
+            return jsonify({"success": False, "error": "Choose whether wet readings are below or above the threshold."}), 400
         updated[key] = value
 
     if updated["update_interval_seconds"] not in (2, 5, 10, 30, 60, 300, 600, 1800, 3600):

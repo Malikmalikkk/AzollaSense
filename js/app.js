@@ -411,6 +411,41 @@
     }
   }
 
+  function updateRainSensorDisplay(data) {
+    if (!data || data.rain_sensor_raw === undefined) return;
+    const setValues = (selector, text) => qsa(selector).forEach((el) => { el.textContent = text; });
+    const raw = Number(data.rain_sensor_raw);
+    if (data.rain_sensor_raw === null || !Number.isFinite(raw)) {
+      setValues(".rain-sensor-reading", "ADC —");
+      setValues(".rain-sensor-status", data.rain_protection_active
+        ? "Sensor unavailable — canopy protection remains active"
+        : "Waiting for sensor data");
+      return;
+    }
+
+    setValues(".rain-sensor-reading", `ADC ${Math.round(raw)}`);
+    let rainStatus = "Waiting for sensor data";
+    let statusColor = "";
+    if (data.rain_detected === true) {
+      rainStatus = data.rain_protection_active
+        ? "Wet — canopy protection active"
+        : "Wet — confirming sensor reading";
+      statusColor = "#1565c0";
+    } else if (data.rain_protection_active && Number.isFinite(Number(data.rain_dry_remaining_seconds))) {
+      const seconds = Math.max(0, Math.round(Number(data.rain_dry_remaining_seconds)));
+      rainStatus = `Drying hold: ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} remaining`;
+      statusColor = "#ad6a00";
+    } else if (data.rain_protection_active) {
+      rainStatus = "Rain protection active";
+      statusColor = "#1565c0";
+    } else if (data.rain_detected === false) {
+      rainStatus = "Dry — canopy protection released";
+      statusColor = "#2e7d32";
+    }
+    setValues(".rain-sensor-status", rainStatus);
+    qsa(".rain-sensor-status").forEach((el) => { el.style.color = statusColor; });
+  }
+
   socket.on("telemetry_update", (data) => {
     const setValues = (selector, text) => qsa(selector).forEach((el) => { el.textContent = text; });
 
@@ -431,6 +466,7 @@
     if (data.ph_voltage !== undefined && data.ph_voltage !== null) {
       setValues(".val-ph-voltage", `${Number(data.ph_voltage).toFixed(3)} V`);
     }
+    updateRainSensorDisplay(data);
     if (data.lux !== undefined && data.lux !== null && Number.isFinite(Number(data.lux))) {
       const lux = Math.max(0, Number(data.lux));
       setValues(".val-lux", `${Math.round(lux).toLocaleString()} lx`);
@@ -473,6 +509,8 @@
     }
 
   });
+
+  socket.on("rain_sensor_update", updateRainSensorDisplay);
 
   socket.on("system_alert", displaySystemAlert);
 

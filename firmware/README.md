@@ -38,6 +38,29 @@ The pH voltage fields are the measured stable voltages in pH 7 and pH 4 buffer
 solutions. The water-level depth is the empty-tank distance from sensor face to
 bottom; correction adds to the calculated level. Upload this firmware version
 once so the ESP32 reports raw sensor readings for the Pi to calibrate.
+
+## Rain-triggered canopy protection
+
+The analog water-level sensor can be used as a rain-wetness sensor by mounting
+its exposed traces where rain can wet them. Connect its D5 signal to ESP32 GPIO
+35 through a divider: sensor D5 to GPIO 35 through a 10 kOhm series resistor,
+then a 20 kOhm resistor from GPIO 35 to GND. Connect sensor GND to ESP32 GND.
+The module is rated for a signal output up to 4.2 V, so do not connect D5
+directly to an ESP32 pin. Power the sensor from 3.3 V or 5 V as supported by the
+module; retain the divider either way.
+
+The ESP32 averages 16 ADC samples and sends the raw 12-bit value every two
+seconds. In Settings > Sensor Settings, watch the live value while the sensor is
+dry and wet, set a threshold between those readings, and choose whether wet
+readings are above or below that threshold. The initial setting is 2000 ADC
+counts with wet readings above the threshold; calibrate it for the installed
+sensor before relying on automatic protection. Two consecutive wet readings
+activate rain protection. The Pi starts a five-minute drying grace when the
+reading first returns to the dry side; rain during that period resets the grace.
+The canopy remains deployed during the grace and retracts afterward if the
+reading is still dry. Rain deployment overrides light automation, which resumes
+after rain protection releases.
+
 The ESP32 boots with outputs off until it receives the Pi's actuator-state
 restore command. If Pi commands stop arriving for 6 seconds, it turns outputs
 off. The solenoid always starts OFF for safety.
@@ -47,7 +70,7 @@ off. The solenoid always starts OFF for safety.
 ESP32 telemetry is one JSON object per line, for example:
 
 ```json
-{"type":"telemetry","water_distance_cm":25.2,"temperature":27.1,"ph_voltage":2.51,"lux":46200,"canopy_deployed":true,"motor_running":false,"camera_cover_open":false,"camera_cover_moving":false,"solenoid":false,"pump":false,"pump_manual":false,"pump_auto":true,"pump_auto_running":false,"canopy_auto":true}
+{"type":"telemetry","water_distance_cm":25.2,"temperature":27.1,"ph_voltage":2.51,"lux":46200,"rain_sensor_raw":1375,"canopy_deployed":true,"motor_running":false,"camera_cover_open":false,"camera_cover_moving":false,"solenoid":false,"pump":false,"pump_manual":false,"pump_auto":true,"pump_auto_running":false,"canopy_auto":true}
 ```
 
 The backend converts pH voltage and ultrasonic distance using its saved Pi

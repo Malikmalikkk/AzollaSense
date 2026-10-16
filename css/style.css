@@ -1989,6 +1989,19 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .light-intensity-heading p, .light-intensity-footer { color: #81764f; }
 .light-intensity-value { color: #493b12; font-size: 23px; font-variant-numeric: tabular-nums; }
 .light-meter-track { height: 8px; background: #f1ebd9; }
+.rain-dashboard-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid #eee8d6;
+  color: #81764f;
+  font-size: 12px;
+}
+.rain-dashboard-status strong { color: var(--text-primary); font-weight: 700; }
+.rain-dashboard-status .rain-sensor-reading { margin-left: auto; font-variant-numeric: tabular-nums; }
 
 .section-title-row { gap: 10px; margin: 28px 0 14px; }
 .section-icon-svg { color: var(--primary-forest); }

@@ -21,7 +21,7 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./css/style.css?v=25" />
+    <link rel="stylesheet" href="./css/style.css?v=26" />
   </head>
 
   <body>
@@ -417,6 +417,11 @@
                   >Waiting for sensor data</span
                 >
                 <span>Canopy trigger: 45,000 lx</span>
+              </div>
+              <div class="rain-dashboard-status" aria-live="polite">
+                <span>Rain sensor</span>
+                <strong class="rain-sensor-status">Waiting for sensor data</strong>
+                <span class="rain-sensor-reading">ADC —</span>
               </div>
             </section>
 
@@ -1050,6 +1055,41 @@
                       aria-label="Browning alert threshold"
                     />
                   </div>
+                  <h3 class="settings-group-title">Rain Protection</h3>
+                  <div class="setting-row-card">
+                    <span class="setting-label">Wet sensor threshold (ADC)</span>
+                    <input
+                      class="config-input"
+                      data-setting="rain_wet_threshold"
+                      type="number"
+                      min="0"
+                      max="4095"
+                      step="1"
+                      aria-label="Rain sensor wet threshold"
+                    />
+                  </div>
+                  <div class="setting-row-card">
+                    <span class="setting-label">Wet reading direction</span>
+                    <select
+                      class="setting-select"
+                      data-setting="rain_wet_below_threshold"
+                      aria-label="Rain sensor wet reading direction"
+                    >
+                      <option value="0">Above threshold</option>
+                      <option value="1">Below threshold</option>
+                    </select>
+                  </div>
+                  <div class="setting-row-card">
+                    <span class="setting-label">Live rain sensor reading</span>
+                    <span class="setting-status-text rain-sensor-reading">Waiting for ESP32</span>
+                  </div>
+                  <div class="setting-row-card">
+                    <span class="setting-label">Rain / canopy status</span>
+                    <span class="setting-status-text rain-sensor-status">Waiting for sensor data</span>
+                  </div>
+                  <p class="setting-help-text">
+                    Observe the live ADC reading with the sensor dry and wet, then set a threshold between those values and choose which side indicates wet. Rain deploys the canopy; it stays deployed for five minutes after the reading first indicates dry.
+                  </p>
                   <h3 class="settings-group-title">Sensor Calibration</h3>
                   <div class="setting-row-card">
                     <span class="setting-label">Live pH sensor voltage</span
@@ -1452,7 +1492,7 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- Application Scripts -->
-    <script src="./js/app.js?v=33" defer></script>
+    <script src="./js/app.js?v=34" defer></script>
     <script>
       // Register Service Worker for PWA
       if ("serviceWorker" in navigator) {
