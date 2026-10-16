@@ -189,10 +189,7 @@ def _evaluate_alert_transitions(telemetry, actuators, settings):
         elif key == "light" and old == "high":
             events.append(("Light intensity normal", "Light has fallen below the canopy release threshold.", "success"))
         elif key == "pump" and value == "on" and previous.get("water") != "low":
-            if actuators.get("pump_auto_running") and water is not None and water <= settings["pump_target_cm"]:
-                events.append(("Low water level", f"Water level is {water:g} cm; automatic pump started.", "warning"))
-            else:
-                events.append(("Pump started", "Pump is now running.", "info"))
+            events.append(("Pump started", "Pump is now running.", "info"))
         elif key == "pump" and value == "off":
             events.append(("Pump stopped", "Pump is no longer running.", "info"))
         elif key == "canopy" and value == "deployed":
@@ -348,7 +345,7 @@ state = {
     "model_status": "not loaded",
     "last_capture_date": None,
     "actuators": {"motor": False, "canopy_motor_running": False, "solenoid": False,
-                  "pump": False, "pump_manual": False, "pump_auto": False,
+                  "pump": False, "pump_manual": False, "ph_auto": False,
                   "pump_auto_running": False, "canopy_auto": False, "device_connected": False},
 }
 
@@ -445,7 +442,7 @@ ph_exchange_stage = "idle"
 device_preferences = {
     "motor": False,
     "pump_manual": False,
-    "pump_auto": False,
+    "ph_auto": False,
     "canopy_auto": False,
 }
 DEVICE_PREFERENCES_PATH = os.path.join(app.instance_path, "actuator_preferences.json")
@@ -530,7 +527,7 @@ def load_device_preferences():
         state["actuators"].update({
             "motor": device_preferences["motor"],
             "pump_manual": device_preferences["pump_manual"],
-            "pump_auto": device_preferences["pump_auto"],
+            "ph_auto": device_preferences["ph_auto"],
             "canopy_auto": device_preferences["canopy_auto"],
         })
 
@@ -619,7 +616,7 @@ def serial_reader_thread():
                     # Automatic mode follows the ESP32's end-stop reading at boot.
                     restore_command = {
                         "type": "restore_state",
-                        "pump_auto": restored["pump_auto"],
+                        "pump_auto": False,
                         "pump": restored["pump_manual"],
                         "canopy_auto": restored["canopy_auto"],
                         "solenoid": False,
@@ -684,9 +681,14 @@ def serial_reader_thread():
                     # its stop margin. Wait for pH to recover before starting
                     # another exchange cycle.
                     global ph_exchange_stage
+                    ph_auto_enabled = state["actuators"].get("ph_auto", False)
+                    if not ph_auto_enabled and ph_exchange_stage != "idle":
+                        ph_exchange_stage = "idle"
+                        state["actuators"]["solenoid"] = False
+                        state["actuators"]["pump_auto_running"] = False
                     ph_out_of_range = ph is not None and (ph < settings["ph_min"] or ph > settings["ph_max"])
                     ph_in_range = ph is not None and settings["ph_min"] <= ph <= settings["ph_max"]
-                    if ph_exchange_stage == "idle" and ph_out_of_range:
+                    if ph_auto_enabled and ph_exchange_stage == "idle" and ph_out_of_range:
                         ph_exchange_stage = "draining"
                     if ph_exchange_stage == "draining":
                         state["actuators"]["solenoid"] = True
@@ -704,23 +706,13 @@ def serial_reader_thread():
                     elif ph_exchange_stage == "wait_in_range" and ph_in_range:
                         ph_exchange_stage = "idle"
 
-                    pump_was_running = state["actuators"].get("pump_auto_running", False)
-                    pump_should_run = pump_was_running
-                    if ph_exchange_stage in ("draining", "refilling"):
-                        pump_should_run = ph_exchange_stage == "refilling"
-                    elif not state["actuators"].get("pump_auto") or state["actuators"].get("solenoid"):
-                        pump_should_run = False
-                    elif water_level is not None:
-                        if not pump_was_running and water_level <= settings["pump_target_cm"]:
-                            pump_should_run = True
-                        elif pump_was_running and water_level >= settings["pump_target_cm"] + settings["pump_hysteresis_cm"]:
-                            pump_should_run = False
-                    if pump_should_run != pump_was_running:
-                        state["actuators"]["pump_auto_running"] = pump_should_run
+                    pump_should_run = ph_exchange_stage == "refilling"
+                    state["actuators"]["pump_auto_running"] = pump_should_run
                     command.update({
                         "pump": state["actuators"].get("pump_manual", False),
-                        "pump_auto": state["actuators"].get("pump_auto", False),
+                        "pump_auto": False,
                         "pump_auto_running": pump_should_run,
+                        "ph_auto": ph_auto_enabled,
                         "canopy_auto": state["actuators"].get("canopy_auto", False),
                         "solenoid": state["actuators"].get("solenoid", False),
                         "camera_cover": state["camera_cover_requested_open"],
@@ -1167,7 +1159,7 @@ def handle_set_actuator(data):
     """Request a manual output state or switch canopy control mode."""
     data = data or {}
     name = data.get("name")
-    if name not in ("motor", "solenoid", "pump", "pump_auto", "canopy_auto"):
+    if name not in ("motor", "solenoid", "pump", "ph_auto", "canopy_auto"):
         return {"success": False, "error": "Unknown actuator"}
     enabled = bool(data.get("enabled"))
     command = {name: enabled}
@@ -1198,13 +1190,20 @@ def handle_set_actuator(data):
             if enabled:
                 state["actuators"]["pump_auto_running"] = False
 
+    elif name == "ph_auto":
+        with state_lock:
+            state["actuators"]["ph_auto"] = enabled
+            if not enabled:
+                global ph_exchange_stage
+                ph_exchange_stage = "idle"
+                state["actuators"]["solenoid"] = False
+                state["actuators"]["pump_auto_running"] = False
+
     sent = send_device_command(command)
     if name == "solenoid" and enabled:
         send_device_command({"pump_auto_running": False})
-    if name == "pump_auto" and not enabled:
-        with state_lock:
-            state["actuators"]["pump_auto_running"] = False
-        send_device_command({"pump_auto_running": False})
+    if name == "ph_auto" and not enabled:
+        send_device_command({"solenoid": False, "pump_auto_running": False})
     return {"success": True, "pending": not sent}
 
 
