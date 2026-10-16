@@ -765,10 +765,10 @@ def serial_reader_thread():
 
                     deployed = state["actuators"].get("motor", False)
                     motor_running = state["actuators"].get("canopy_motor_running", False)
-                    if rain_protection_active and not deployed and not motor_running:
+                    if rain_protection_active and state["actuators"].get("canopy_auto") and not deployed and not motor_running:
                         command["auto_motor"] = True
                         state["actuators"]["motor"] = True
-                    elif not rain_protection_active and rain_release_pending and not state["actuators"].get("canopy_auto") and not motor_running:
+                    elif not rain_protection_active and rain_release_pending and state["actuators"].get("canopy_auto") and not motor_running:
                         if deployed:
                             command["auto_motor"] = False
                             state["actuators"]["motor"] = False
@@ -1235,6 +1235,7 @@ def send_initial_device_state():
 @socketio.on("set_actuator")
 def handle_set_actuator(data):
     """Request a manual output state or switch canopy control mode."""
+    global ph_exchange_stage
     data = data or {}
     name = data.get("name")
     if name not in ("motor", "solenoid", "pump", "ph_auto", "canopy_auto"):
@@ -1248,9 +1249,17 @@ def handle_set_actuator(data):
             previous_actuators = dict(state["actuators"])
             device_preferences[preference_key] = enabled
             if name == "motor":
-                # Manual canopy movement takes control away from lux automation.
+                # A manual position remains authoritative until canopy auto is re-enabled.
                 device_preferences["canopy_auto"] = False
                 state["actuators"]["canopy_auto"] = False
+                command["canopy_auto"] = False
+            elif name == "pump":
+                state["actuators"]["ph_auto"] = False
+                state["actuators"]["solenoid"] = False
+                state["actuators"]["pump_auto_running"] = False
+                ph_exchange_stage = "idle"
+                device_preferences["ph_auto"] = False
+                command.update({"pump": enabled, "ph_auto": False, "solenoid": False, "pump_auto_running": False})
             state["actuators"][preference_key] = enabled
             if name == "motor":
                 state["actuators"]["motor"] = enabled
@@ -1264,15 +1273,27 @@ def handle_set_actuator(data):
             return {"success": False, "error": "Could not save the switch state on the Raspberry Pi"}
     elif name == "solenoid":
         with state_lock:
+            previous_preferences = dict(device_preferences)
+            previous_actuators = dict(state["actuators"])
+            state["actuators"]["ph_auto"] = False
+            device_preferences["ph_auto"] = False
+            ph_exchange_stage = "idle"
+            state["actuators"]["pump_auto_running"] = False
             state["actuators"][name] = enabled
-            if enabled:
-                state["actuators"]["pump_auto_running"] = False
+        try:
+            save_device_preferences()
+        except OSError as exc:
+            print(f"[STATE] Could not persist actuator preferences: {exc}")
+            with state_lock:
+                device_preferences.update(previous_preferences)
+                state["actuators"].update(previous_actuators)
+            return {"success": False, "error": "Could not save the switch state on the Raspberry Pi"}
+        command.update({"ph_auto": False, "pump_auto_running": False})
 
     elif name == "ph_auto":
         with state_lock:
             state["actuators"]["ph_auto"] = enabled
             if not enabled:
-                global ph_exchange_stage
                 ph_exchange_stage = "idle"
                 state["actuators"]["solenoid"] = False
                 state["actuators"]["pump_auto_running"] = False

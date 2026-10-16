@@ -146,12 +146,12 @@ continuous-current rating.
   at each endpoint; `MOTOR_TRAVEL_MS`
   is still a backup timeout and should be set slightly longer than measured
   full travel time.
-- The pump manual switch requests pump ON; switching it off removes that request
-  while automatic low-water filling remains enabled. The pump is forced off
-  while the harvest drain solenoid is open.
-- The Machine Settings screen has a separate automatic pump switch. Turning it
-  off disables water-level-triggered pumping; the manual pump request remains
-  available. Turning it back on resumes the configured water-level logic.
+- Manual pump or harvest drain solenoid input suspends pH automation, so an
+  automatic drain or refill cannot restart after a manual choice. Re-enable
+  pH automation explicitly to resume it. The pump remains interlocked OFF while
+  the harvest drain solenoid is open.
+- Manual canopy positioning turns canopy automation off. Rain protection and
+  light thresholds only move the canopy while canopy automation is enabled.
 
 All relay outputs and HW-039 enables start OFF. Confirm relay-board active level
 and load ratings with low-voltage test loads before connecting the pond hardware.
