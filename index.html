@@ -21,7 +21,7 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./css/style.css?v=26" />
+    <link rel="stylesheet" href="./css/style.css?v=27" />
   </head>
 
   <body>
@@ -790,7 +790,7 @@
               </div>
             </div>
 
-            <!-- Segmented Filter Bar (App Settings / Sensor Settings / Machine Settings) -->
+            <!-- Segmented Filter Bar -->
             <div class="settings-segmented-bar">
               <button class="segment-item active" data-category="app">
                 App Settings
@@ -800,6 +800,9 @@
               </button>
               <button class="segment-item" data-category="machine">
                 Machine Settings
+              </button>
+              <button class="segment-item is-hidden" data-category="accounts" id="account-management-tab">
+                User Accounts
               </button>
             </div>
 
@@ -1270,6 +1273,24 @@
               </div>
             </div>
 
+            <div class="settings-subgroup is-hidden" data-group="accounts" id="account-management-panel">
+              <div class="settings-group">
+                <h3 class="settings-group-title">User Accounts</h3>
+                <div id="managed-user-list" class="account-list" aria-live="polite">
+                  <p class="setting-help-text">Loading accounts…</p>
+                </div>
+                <form id="add-user-form" class="local-user-form account-add-form">
+                  <h4>Add an account</h4>
+                  <label for="new-user-name">Username</label>
+                  <input id="new-user-name" name="username" required minlength="3" maxlength="40" autocomplete="off" />
+                  <label for="new-user-password">Password</label>
+                  <input id="new-user-password" name="password" type="password" required minlength="10" maxlength="256" autocomplete="new-password" />
+                  <button type="submit">Create account</button>
+                  <p id="add-user-message" role="status"></p>
+                </form>
+              </div>
+            </div>
+
             <!-- Big Green Save Button -->
             <button
               id="save-settings-btn"
@@ -1453,30 +1474,6 @@
               <span class="setting-status-text">AZ-POND-04</span>
             </div>
           </div>
-          <form id="add-user-form" class="local-user-form">
-            <h4>Add a local account</h4>
-            <label for="new-user-name">Username</label>
-            <input
-              id="new-user-name"
-              name="username"
-              required
-              minlength="3"
-              maxlength="40"
-              autocomplete="off"
-            />
-            <label for="new-user-password">Password</label>
-            <input
-              id="new-user-password"
-              name="password"
-              type="password"
-              required
-              minlength="10"
-              maxlength="256"
-              autocomplete="new-password"
-            />
-            <button type="submit">Create account</button>
-            <p id="add-user-message" role="status"></p>
-          </form>
           <button
             id="logout-btn"
             class="logout-btn profile-logout-btn"
@@ -1492,7 +1489,7 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- Application Scripts -->
-    <script src="./js/app.js?v=35" defer></script>
+    <script src="./js/app.js?v=36" defer></script>
     <script>
       // Register Service Worker for PWA
       if ("serviceWorker" in navigator) {

@@ -305,6 +305,11 @@ def is_loopback_request():
         return False
 
 
+def is_system_admin(user=None):
+    user = user if user is not None else getattr(g, "user", None)
+    return bool(user and user["username"].casefold() == "malik")
+
+
 def create_session(user_id, local=False):
     token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token.encode("ascii")).digest()
@@ -1467,7 +1472,7 @@ def no_store(response):
 def auth_status():
     with AUTH_DB_LOCK, auth_db() as connection:
         configured = connection.execute("SELECT 1 FROM users LIMIT 1").fetchone() is not None
-    return no_store(jsonify({"configured": configured, "authenticated": bool(g.user), "username": g.user["username"] if g.user else None}))
+    return no_store(jsonify({"configured": configured, "authenticated": bool(g.user), "username": g.user["username"] if g.user else None, "is_admin": is_system_admin()}))
 
 
 @app.route("/api/auth/setup", methods=["POST"])
@@ -1541,8 +1546,19 @@ def auth_logout():
     return response
 
 
+@app.route("/api/auth/users", methods=["GET"])
+def auth_list_users():
+    if not is_system_admin():
+        return jsonify({"error": "System administrator access required."}), 403
+    with AUTH_DB_LOCK, auth_db() as connection:
+        rows = connection.execute("SELECT id,username,created_at FROM users ORDER BY username COLLATE NOCASE").fetchall()
+    return no_store(jsonify({"users": [dict(row) for row in rows]}))
+
+
 @app.route("/api/auth/users", methods=["POST"])
 def auth_add_user():
+    if not is_system_admin():
+        return jsonify({"error": "System administrator access required."}), 403
     data = request.get_json(silent=True) or {}
     username, password = str(data.get("username", "")).strip(), data.get("password", "")
     if not isinstance(password, str) or not 3 <= len(username) <= 40 or not username.replace("_", "").replace("-", "").isalnum() or len(password) < 10 or len(password) > 256:
@@ -1554,6 +1570,23 @@ def auth_add_user():
     except sqlite3.IntegrityError:
         return jsonify({"error": "That username is already in use."}), 409
     return jsonify({"success": True}), 201
+
+
+@app.route("/api/auth/users/<int:user_id>", methods=["DELETE"])
+def auth_remove_user(user_id):
+    if not is_system_admin():
+        return jsonify({"error": "System administrator access required."}), 403
+    if user_id == g.user["id"]:
+        return jsonify({"error": "The system administrator account cannot be removed while signed in."}), 400
+    with AUTH_DB_LOCK, auth_db() as connection:
+        target = connection.execute("SELECT username FROM users WHERE id=?", (user_id,)).fetchone()
+        if not target:
+            return jsonify({"error": "Account not found."}), 404
+        if target["username"].casefold() == "malik":
+            return jsonify({"error": "The system administrator account cannot be removed."}), 400
+        connection.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+        connection.execute("DELETE FROM users WHERE id=?", (user_id,))
+    return jsonify({"success": True})
 
 
 @app.route("/video_feed")

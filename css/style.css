@@ -1804,6 +1804,16 @@ input:checked+.slider-knob::before {
 .local-user-form input { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #d3dfd4; border-radius: 8px; font: inherit; }
 .local-user-form button { margin-top: 4px; padding: 10px; border: 0; border-radius: 8px; background: #276b38; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 .local-user-form p { min-height: 18px; margin: 0; font-size: 12px; color: #315b39; }
+.account-list { overflow: hidden; border: 1px solid var(--card-border); border-radius: 14px; background: #fff; }
+.account-list-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 16px; border-bottom: 1px solid #edf1ec; }
+.account-list-row:last-child { border-bottom: 0; }
+.account-list-row > div { display: grid; gap: 4px; min-width: 0; }
+.account-list-row strong { overflow-wrap: anywhere; color: var(--text-primary); font-size: 13px; }
+.account-created-at, .account-admin-label { color: var(--text-muted); font-size: 11px; }
+.account-admin-label { text-align: right; }
+.account-delete-btn { flex: 0 0 auto; padding: 7px 10px; border: 1px solid #efd4d0; border-radius: 8px; background: #fff8f7; color: #a33b30; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.account-delete-btn:disabled { opacity: .55; cursor: wait; }
+.account-add-form { max-width: 480px; }
 
 /* ========================================================================
    AzollaSense visual system refresh

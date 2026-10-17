@@ -600,6 +600,11 @@
       const profile = byId("profile-btn");
       if (name && account.username) name.textContent = account.username;
       if (profile && account.username) profile.title = `Signed in as ${account.username}`;
+      if (account.is_admin) {
+        const accountTab = byId("account-management-tab");
+        if (accountTab) accountTab.classList.remove("is-hidden");
+        loadManagedUsers();
+      }
     })
     .catch(() => { location.replace("/login"); });
 
@@ -625,8 +630,69 @@
       if (!response.ok) throw new Error(result.error || "Could not create account.");
       addUserForm.reset();
       message.textContent = "Account created on this Raspberry Pi.";
+      loadManagedUsers();
     } catch (error) { message.textContent = error.message || "Could not reach the local server."; }
   });
+
+  async function loadManagedUsers() {
+    const list = byId("managed-user-list");
+    if (!list) return;
+    try {
+      const response = await fetch(backendUrl("/api/auth/users"), { cache: "no-store", credentials: "same-origin" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not load accounts.");
+      list.replaceChildren();
+      (result.users || []).forEach((user) => {
+        const row = document.createElement("div");
+        row.className = "account-list-row";
+        const details = document.createElement("div");
+        const username = document.createElement("strong");
+        username.textContent = user.username;
+        const created = document.createElement("span");
+        created.className = "account-created-at";
+        const createdDate = new Date(user.created_at);
+        created.textContent = `Created ${Number.isNaN(createdDate.getTime()) ? user.created_at : createdDate.toLocaleDateString()}`;
+        details.append(username, created);
+        row.append(details);
+        if (user.username.toLowerCase() === "malik") {
+          const role = document.createElement("span");
+          role.className = "account-admin-label";
+          role.textContent = "System administrator";
+          row.append(role);
+        } else {
+          const remove = document.createElement("button");
+          remove.className = "account-delete-btn";
+          remove.type = "button";
+          remove.textContent = "Remove";
+          remove.setAttribute("aria-label", `Remove account ${user.username}`);
+          remove.addEventListener("click", async () => {
+            if (!window.confirm(`Remove the account “${user.username}”? This signs it out immediately.`)) return;
+            remove.disabled = true;
+            try {
+              const deletion = await fetch(backendUrl(`/api/auth/users/${user.id}`), { method: "DELETE", credentials: "same-origin" });
+              const deletionResult = await deletion.json();
+              if (!deletion.ok) throw new Error(deletionResult.error || "Could not remove account.");
+              loadManagedUsers();
+              showToast(`Account ${user.username} removed.`);
+            } catch (error) {
+              remove.disabled = false;
+              showToast(error.message || "Could not reach the local server.");
+            }
+          });
+          row.append(remove);
+        }
+        list.append(row);
+      });
+      if (!result.users?.length) {
+        const empty = document.createElement("p");
+        empty.className = "setting-help-text";
+        empty.textContent = "No user accounts found.";
+        list.append(empty);
+      }
+    } catch (error) {
+      list.textContent = error.message || "Could not load accounts.";
+    }
+  }
 
 
   /* ------------------------------------------------------------------ */
@@ -643,6 +709,8 @@
       settingGroups.forEach((group) => {
         group.classList.toggle("is-hidden", group.dataset.group !== category);
       });
+      const saveButton = byId("save-settings-btn");
+      if (saveButton) saveButton.classList.toggle("is-hidden", category === "accounts");
     });
   });
 
