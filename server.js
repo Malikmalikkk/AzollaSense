@@ -15,7 +15,7 @@ const MIME = {
 
 const server = http.createServer((req, res) => {
   let reqPath = req.url.split('?')[0];
-  if (reqPath === '/') reqPath = '/index.html';
+  if (reqPath === '/') reqPath = '/login.html';
 
   const filePath = path.join(__dirname, decodeURIComponent(reqPath));
   const ext = path.extname(filePath).toLowerCase();

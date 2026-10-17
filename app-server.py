@@ -12,6 +12,7 @@ import io
 import math
 import hashlib
 import hmac
+import ipaddress
 import secrets
 import sqlite3
 import signal
@@ -65,7 +66,9 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 os.makedirs(app.instance_path, exist_ok=True)
 AUTH_DB_PATH = os.path.join(app.instance_path, "auth.sqlite3")
 SESSION_COOKIE = "azollasense_session"
-SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 7
+SESSION_IDLE_TIMEOUT_SECONDS = 30 * 60
+SESSION_REFRESH_SECONDS = 60
+SESSION_CHECK_SECONDS = 5
 AUTH_DB_LOCK = threading.RLock()
 TELEMETRY_DB_PATH = os.path.join(app.instance_path, "telemetry.sqlite3")
 TELEMETRY_DB_LOCK = threading.RLock()
@@ -260,7 +263,29 @@ def init_auth_db():
     with AUTH_DB_LOCK, auth_db() as connection:
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash BLOB NOT NULL, password_salt BLOB NOT NULL, created_at TEXT NOT NULL)")
-        connection.execute("CREATE TABLE IF NOT EXISTS sessions (token_hash BLOB PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at TEXT NOT NULL)")
+        connection.execute("CREATE TABLE IF NOT EXISTS sessions (token_hash BLOB PRIMARY KEY, user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE, expires_at TEXT, is_local INTEGER NOT NULL DEFAULT 0)")
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(sessions)")}
+        indexes = connection.execute("PRAGMA index_list(sessions)").fetchall()
+        unique_user = any(index[2] and [column[2] for column in connection.execute(f"PRAGMA index_info({index[1]})")] == ["user_id"] for index in indexes)
+        if "is_local" not in columns or not unique_user:
+            now = datetime.now(timezone.utc)
+            rows = connection.execute("SELECT token_hash,user_id,expires_at FROM sessions ORDER BY user_id,expires_at DESC").fetchall()
+            keep = {}
+            for row in rows:
+                if row["user_id"] in keep:
+                    continue
+                try:
+                    if datetime.fromisoformat(row["expires_at"]) <= now:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                keep[row["user_id"]] = row["token_hash"]
+            connection.execute("ALTER TABLE sessions RENAME TO sessions_legacy")
+            connection.execute("CREATE TABLE sessions (token_hash BLOB PRIMARY KEY, user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE, expires_at TEXT, is_local INTEGER NOT NULL DEFAULT 0)")
+            migrated_expiry = (now + timedelta(seconds=SESSION_IDLE_TIMEOUT_SECONDS)).isoformat()
+            for user_id, token_hash in keep.items():
+                connection.execute("INSERT INTO sessions(token_hash,user_id,expires_at,is_local) VALUES(?,?,?,0)", (token_hash, user_id, migrated_expiry))
+            connection.execute("DROP TABLE sessions_legacy")
         connection.execute("CREATE TABLE IF NOT EXISTS login_attempts (ip TEXT PRIMARY KEY, failures INTEGER NOT NULL, window_started REAL NOT NULL, locked_until REAL NOT NULL DEFAULT 0)")
 
 
@@ -273,12 +298,23 @@ def password_digest(password, salt):
     return hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2**14, r=8, p=1, dklen=32)
 
 
-def create_session(user_id):
+def is_loopback_request():
+    try:
+        return ipaddress.ip_address(request.remote_addr or "").is_loopback
+    except ValueError:
+        return False
+
+
+def create_session(user_id, local=False):
     token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token.encode("ascii")).digest()
-    expiry = datetime.now(timezone.utc) + timedelta(seconds=SESSION_LIFETIME_SECONDS)
+    expiry = None if local else (datetime.now(timezone.utc) + timedelta(seconds=SESSION_IDLE_TIMEOUT_SECONDS)).isoformat()
     with AUTH_DB_LOCK, auth_db() as connection:
-        connection.execute("INSERT INTO sessions(token_hash, user_id, expires_at) VALUES (?, ?, ?)", (token_hash, user_id, expiry.isoformat()))
+        connection.execute("BEGIN IMMEDIATE")
+        connection.execute("DELETE FROM sessions WHERE expires_at IS NOT NULL AND expires_at <= ?", (datetime.now(timezone.utc).isoformat(),))
+        if connection.execute("SELECT 1 FROM sessions WHERE user_id=?", (user_id,)).fetchone():
+            return None
+        connection.execute("INSERT INTO sessions(token_hash, user_id, expires_at, is_local) VALUES (?, ?, ?, ?)", (token_hash, user_id, expiry, int(local)))
     return token
 
 
@@ -289,10 +325,10 @@ def load_local_user():
     if token:
         token_hash = hashlib.sha256(token.encode("utf-8")).digest()
         with AUTH_DB_LOCK, auth_db() as connection:
-            row = connection.execute("SELECT users.id, users.username, sessions.expires_at FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=?", (token_hash,)).fetchone()
+            row = connection.execute("SELECT users.id, users.username, sessions.expires_at, sessions.is_local FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=?", (token_hash,)).fetchone()
             if row:
-                if datetime.fromisoformat(row["expires_at"]) > datetime.now(timezone.utc):
-                    g.user = {"id": row["id"], "username": row["username"]}
+                if row["is_local"] or (row["expires_at"] and datetime.fromisoformat(row["expires_at"]) > datetime.now(timezone.utc)):
+                    g.user = {"id": row["id"], "username": row["username"], "token_hash": token_hash, "is_local": bool(row["is_local"])}
                 else:
                     connection.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash,))
 
@@ -310,15 +346,44 @@ def require_socket_login(auth=None):
     if not token:
         return False
     token_hash = hashlib.sha256(token.encode("utf-8")).digest()
+    if not session_is_valid(token_hash):
+        return False
+    send_initial_device_state()
+    socketio.start_background_task(enforce_socket_session, request.sid, token_hash)
+    return True
+
+
+def session_is_valid(token_hash, refresh=False):
     with AUTH_DB_LOCK, auth_db() as connection:
-        row = connection.execute("SELECT expires_at FROM sessions WHERE token_hash=?", (token_hash,)).fetchone()
-    return bool(row and datetime.fromisoformat(row["expires_at"]) > datetime.now(timezone.utc))
+        row = connection.execute("SELECT expires_at,is_local FROM sessions WHERE token_hash=?", (token_hash,)).fetchone()
+        if not row:
+            return False
+        if row["is_local"]:
+            return True
+        now = datetime.now(timezone.utc)
+        if not row["expires_at"] or datetime.fromisoformat(row["expires_at"]) <= now:
+            connection.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash,))
+            return False
+        if refresh:
+            expiry = (now + timedelta(seconds=SESSION_IDLE_TIMEOUT_SECONDS)).isoformat()
+            connection.execute("UPDATE sessions SET expires_at=? WHERE token_hash=?", (expiry, token_hash))
+        return True
+
+
+def enforce_socket_session(sid, token_hash):
+    while socketio.server.manager.is_connected(sid, "/") and session_is_valid(token_hash):
+        socketio.sleep(15)
+    if socketio.server.manager.is_connected(sid, "/"):
+        socketio.server.disconnect(sid, namespace="/")
 
 # ---------------------------------------------------------------------------
 # Shared state — every field below is guarded by state_lock
 # ---------------------------------------------------------------------------
 
 state_lock = threading.RLock()
+stream_condition = threading.Condition(state_lock)
+latest_stream_frame = None
+stream_frame_sequence = 0
 state = {
     "telemetry": {
         "water_level": 26.0,
@@ -339,6 +404,8 @@ state = {
     "cv_updated_monotonic": None,
     "ai_vision_enabled": True,
     "stream_active": False,
+    "stream_viewers": 0,
+    "stream_generation": 0,
     "capture_in_progress": False,
     "camera_cover_requested_open": False,
     "camera_cover_open": None,
@@ -923,6 +990,7 @@ def release_camera():
         state["stream_active"] = False
         camera = state["camera"]
         state["camera"] = None
+        stream_condition.notify_all()
     if camera is not None:
         try:
             camera.release()
@@ -1103,14 +1171,20 @@ def capture_scheduler_thread():
 
 
 
-def generate_camera_stream():
-    """MJPEG generator: read -> segment -> (optionally) annotate -> emit."""
+def camera_stream_worker(generation):
+    """Capture and encode one shared frame stream for all connected viewers."""
+    global latest_stream_frame, stream_frame_sequence
     with state_lock:
+        if not state["stream_active"] or state["stream_generation"] != generation:
+            return
         if state["camera"] is None:
             state["camera"] = open_camera()
         if state["camera"] is None:
             print("[CAMERA] ERROR: could not start the Raspberry Pi Camera.")
-            release_camera()  # clears the stream reservation
+            if state["stream_generation"] == generation:
+                state["stream_active"] = False
+            stream_condition.notify_all()
+            sync_camera_cover()
             return
         print("[CAMERA] Raspberry Pi Camera streaming.")
 
@@ -1125,6 +1199,11 @@ def generate_camera_stream():
             with state_lock:
                 if not state["stream_active"] or state["camera"] is None:
                     break
+                if state["stream_viewers"] <= 0:
+                    stream_condition.wait(timeout=0.25)
+                    if state["stream_viewers"] <= 0:
+                        break
+                    continue
                 success, frame = camera.read()
 
             if not success:
@@ -1173,18 +1252,59 @@ def generate_camera_stream():
             if not ok:
                 continue
 
-            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
+            with stream_condition:
+                latest_stream_frame = buffer.tobytes()
+                stream_frame_sequence += 1
+                stream_condition.notify_all()
 
             elapsed = time.time() - frame_start
             if elapsed < frame_period:
                 time.sleep(frame_period - elapsed)
-
-    except GeneratorExit:
-        print("[CAMERA] Browser disconnected from stream.")
-    except Exception as exc:
-        print(f"[CAMERA] Stream error: {exc}")
     finally:
-        release_camera()
+        with stream_condition:
+            current_generation = state["stream_generation"] == generation
+            if current_generation and state["camera"] is camera:
+                if not getattr(camera, "closed", False):
+                    camera.release()
+                state["camera"] = None
+            if current_generation:
+                state["stream_active"] = False
+                stream_condition.notify_all()
+        if not current_generation and not getattr(camera, "closed", False):
+            camera.release()
+        sync_camera_cover()
+
+
+def generate_camera_stream(token_hash):
+    """Fan out the newest shared JPEG while this authenticated viewer remains connected."""
+    global latest_stream_frame
+    last_sequence = 0
+    last_session_refresh = 0.0
+    last_session_check = 0.0
+    try:
+        while True:
+            now = time.monotonic()
+            if now - last_session_check >= SESSION_CHECK_SECONDS:
+                refresh = now - last_session_refresh >= SESSION_REFRESH_SECONDS
+                if not session_is_valid(token_hash, refresh=refresh):
+                    break
+                last_session_check = now
+                if refresh:
+                    last_session_refresh = now
+            with stream_condition:
+                if not state["stream_active"]:
+                    break
+                if stream_frame_sequence == last_sequence or latest_stream_frame is None:
+                    stream_condition.wait(timeout=2)
+                    continue
+                last_sequence = stream_frame_sequence
+                frame = latest_stream_frame
+            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
+    finally:
+        with stream_condition:
+            state["stream_viewers"] = max(0, state["stream_viewers"] - 1)
+            stream_condition.notify_all()
+
 
 
 
@@ -1224,7 +1344,6 @@ def handle_toggle_vision(data):
     return {"success": True, "enabled": enabled}
 
 
-@socketio.on("connect")
 def send_initial_device_state():
     with state_lock:
         socketio.emit("actuator_update", dict(state["actuators"]), to=request.sid)
@@ -1322,8 +1441,8 @@ def serve_login():
     return no_store(send_from_directory(BASE_DIR, "login.html"))
 
 
-def set_session_cookie(response, token):
-    response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_LIFETIME_SECONDS,
+def set_session_cookie(response, token, local=False):
+    response.set_cookie(SESSION_COOKIE, token, max_age=None if local else SESSION_IDLE_TIMEOUT_SECONDS,
                         httponly=True, secure=request_is_https(), samesite="Lax", path="/")
     response.headers["Cache-Control"] = "no-store"
     return response
@@ -1367,7 +1486,11 @@ def auth_setup():
             user_id = cursor.lastrowid
         except sqlite3.IntegrityError:
             return jsonify({"error": "That username is already in use."}), 409
-    return set_session_cookie(jsonify({"success": True}), create_session(user_id))
+    local = is_loopback_request()
+    token = create_session(user_id, local)
+    if not token:
+        return jsonify({"error": "This account already has an active session. Log out there or wait for it to expire."}), 409
+    return set_session_cookie(jsonify({"success": True}), token, local)
 
 
 @app.route("/api/auth/login", methods=["POST"])
@@ -1389,7 +1512,21 @@ def auth_login():
             connection.execute("INSERT INTO login_attempts(ip,failures,window_started,locked_until) VALUES(?,?,?,?) ON CONFLICT(ip) DO UPDATE SET failures=excluded.failures,window_started=excluded.window_started,locked_until=excluded.locked_until", (ip, failures, now if failures == 1 else attempt["window_started"], locked_until))
             return jsonify({"error": "Username or password is incorrect."}), 401
         connection.execute("DELETE FROM login_attempts WHERE ip=?", (ip,))
-    return set_session_cookie(jsonify({"success": True}), create_session(row["id"]))
+    local = is_loopback_request()
+    token = create_session(row["id"], local)
+    if not token:
+        return jsonify({"error": "This account already has an active session. Log out there or wait for it to expire."}), 409
+    return set_session_cookie(jsonify({"success": True}), token, local)
+
+
+@app.route("/api/auth/activity", methods=["POST"])
+def auth_activity():
+    if g.user and not session_is_valid(g.user["token_hash"], refresh=True):
+        return jsonify({"error": "Session expired."}), 401
+    response = jsonify({"success": True})
+    if g.user and not g.user["is_local"]:
+        set_session_cookie(response, request.cookies.get(SESSION_COOKIE), False)
+    return response
 
 
 @app.route("/api/auth/logout", methods=["POST"])
@@ -1421,17 +1558,24 @@ def auth_add_user():
 
 @app.route("/video_feed")
 def video_feed():
+    global latest_stream_frame
     with state_lock:
         if state["capture_in_progress"]:
             return jsonify({"error": "image capture in progress"}), 409
-        if state["stream_active"]:
-            # Only one MJPEG consumer may hold the camera at a time
-            return jsonify({"error": "camera stream already active"}), 503
-        state["stream_active"] = True
+        state["stream_viewers"] += 1
+        start_worker = not state["stream_active"]
+        if start_worker:
+            state["stream_active"] = True
+            state["stream_generation"] += 1
+            state["camera"] = None
+            latest_stream_frame = None
+        generation = state["stream_generation"]
 
-    sync_camera_cover()
+    if start_worker:
+        sync_camera_cover()
+        socketio.start_background_task(camera_stream_worker, generation)
 
-    response = Response(generate_camera_stream(), mimetype="multipart/x-mixed-replace; boundary=frame")
+    response = Response(stream_with_context(generate_camera_stream(g.user["token_hash"])), mimetype="multipart/x-mixed-replace; boundary=frame")
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
@@ -1440,9 +1584,9 @@ def video_feed():
 
 @app.route("/stop_stream", methods=["POST"])
 def stop_stream():
-    print("[CAMERA] Stop stream requested.")
-    release_camera()
-    return jsonify({"success": True, "streaming": False})
+    # Viewer disconnects release their own stream subscription. A browser must
+    # not be able to stop the shared camera feed for everyone else.
+    return jsonify({"success": True, "streaming": state["stream_active"]})
 
 
 @app.route("/health")

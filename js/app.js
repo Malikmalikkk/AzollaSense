@@ -214,6 +214,25 @@
     if (cvToggleBtn) cvToggleBtn.classList.toggle("is-hidden", !running);
   }
 
+  let lastSessionActivitySent = 0;
+  function sendSessionActivity(force = false) {
+    const now = Date.now();
+    if (!force && now - lastSessionActivitySent < 60000) return;
+    lastSessionActivitySent = now;
+    fetch(backendUrl("/api/auth/activity"), { method: "POST", credentials: "same-origin", cache: "no-store" })
+      .then((response) => {
+        if (response.status === 401) location.replace("/login");
+      })
+      .catch(() => {});
+  }
+
+  ["pointerdown", "keydown", "touchstart", "wheel"].forEach((eventName) => {
+    document.addEventListener(eventName, () => sendSessionActivity(), { passive: true });
+  });
+  window.setInterval(() => {
+    if (streamRunning) sendSessionActivity(true);
+  }, 60000);
+
   function resetVisionToggle() {
     aiVisionOn = true;
     if (!cvToggleBtn) return;
@@ -224,12 +243,6 @@
 
   function stopCameraStream(notify = true) {
     if (!streamRunning) return;
-
-    // Ask the backend to release the Raspberry Pi Camera.
-    // keepalive lets the request survive page navigation.
-    fetch(backendUrl("/stop_stream"), { method: "POST", keepalive: true })
-      .then((response) => response.json())
-      .catch(() => { /* camera already released or server offline */ });
 
     if (liveFeed) liveFeed.removeAttribute("src");
 
@@ -262,8 +275,7 @@
 
   window.addEventListener("beforeunload", () => {
     if (!streamRunning) return;
-    // sendBeacon survives page unload where fetch() may be cancelled
-    navigator.sendBeacon(backendUrl("/stop_stream"), new Blob([], { type: "application/json" }));
+    // Closing this viewer's MJPEG response releases its shared-feed subscription.
     if (liveFeed) liveFeed.removeAttribute("src");
   });
 

@@ -14,7 +14,7 @@ const CORE_ASSETS = [
   "./index.html",
   "./login.html",
   "./css/style.css?v=26",
-  "./js/app.js?v=34",
+  "./js/app.js?v=35",
   "./js/auth.js?v=2",
   "./manifest.json",
   "./assets/logo.png",
