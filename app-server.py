@@ -149,12 +149,22 @@ def _evaluate_alert_transitions(telemetry, actuators, settings):
         value = telemetry.get(key)
         return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else None
 
-    ph, water, lux = number("ph"), number("water_level"), number("lux")
+    ph, water, temperature, lux = (
+        number("ph"), number("water_level"), number("temperature"), number("lux")
+    )
     current = {}
+    if temperature is not None:
+        current["temperature"] = "high" if temperature > settings["temperature_max_c"] else "ok"
     if ph is not None:
         current["ph"] = "low" if ph < settings["ph_min"] else "high" if ph > settings["ph_max"] else "ok"
     if water is not None:
         current["water"] = "low" if water < settings["water_min_cm"] else "high" if water > settings["water_max_cm"] else "ok"
+    browning = number("brown_cov")
+    if browning is not None:
+        current["browning"] = "high" if browning >= settings["browning_alert_pct"] else "ok"
+    if isinstance(telemetry.get("rain_detected"), bool):
+        current["rain"] = "wet" if telemetry.get("rain_protection_active") is True else "dry"
+    rain_reading = number("rain_sensor_raw")
     if lux is not None:
         prior_light = previous_alert_states.get("light") if previous_alert_states else None
         current["light"] = "high" if lux >= (settings["canopy_release_lux"] if prior_light == "high" else settings["canopy_deploy_lux"]) else "normal"
@@ -173,7 +183,11 @@ def _evaluate_alert_transitions(telemetry, actuators, settings):
         old = previous.get(key)
         if old is None or old == value:
             continue
-        if key == "ph" and value in ("low", "high"):
+        if key == "temperature" and value == "high":
+            events.append(("High temperature warning", f"Water temperature is {temperature:g} °C, above the configured maximum of {settings['temperature_max_c']:g} °C.", "warning"))
+        elif key == "temperature" and old == "high":
+            events.append(("Temperature back in range", "Water temperature has returned below its configured maximum.", "success"))
+        elif key == "ph" and value in ("low", "high"):
             events.append(("Water pH warning", f"pH is {value}; reading {ph:g}, configured range {settings['ph_min']:g}–{settings['ph_max']:g}.", "warning"))
         elif key == "ph" and old != "ok":
             events.append(("pH back in range", "Water pH has returned to its configured range.", "success"))
@@ -187,9 +201,19 @@ def _evaluate_alert_transitions(telemetry, actuators, settings):
         elif key == "water" and old != "ok":
             events.append(("Water level recovered", "Water level has returned to its configured range.", "success"))
         elif key == "light" and value == "high":
-            events.append(("High light intensity", "Light is above the canopy deploy threshold.", "warning"))
+            events.append(("High light intensity", f"Light is {lux:g} lx, at or above the canopy deploy threshold of {settings['canopy_deploy_lux']:g} lx.", "warning"))
         elif key == "light" and old == "high":
-            events.append(("Light intensity normal", "Light has fallen below the canopy release threshold.", "success"))
+            events.append(("Light intensity normal", f"Light is {lux:g} lx, below the canopy release threshold of {settings['canopy_release_lux']:g} lx.", "success"))
+        elif key == "browning" and value == "high":
+            events.append(("Azolla browning warning", f"Browning is {browning:g}%, at or above the configured alert threshold of {settings['browning_alert_pct']:g}%.", "warning"))
+        elif key == "browning" and old == "high":
+            events.append(("Browning level recovered", "Azolla browning has fallen below its configured alert threshold.", "success"))
+        elif key == "rain" and value == "wet":
+            direction = "at or below" if settings["rain_wet_below_threshold"] == 1 else "at or above"
+            reading_text = f"Reading {rain_reading:g} is " if rain_reading is not None else "The sensor reading is "
+            events.append(("Rain detected", f"{reading_text}{direction} the configured wet threshold of {settings['rain_wet_threshold']:g}; canopy rain protection is active.", "warning"))
+        elif key == "rain" and old == "wet":
+            events.append(("Rain protection cleared", "The rain sensor is dry and canopy rain protection has been released.", "success"))
         elif key == "pump" and value == "on" and previous.get("water") != "low":
             events.append(("Pump started", "Pump is now running.", "info"))
         elif key == "pump" and value == "off":
