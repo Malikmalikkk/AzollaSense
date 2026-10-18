@@ -2617,9 +2617,7 @@ body { font-size: var(--font-md); }
 
 /* Keep the Settings title and category bar pinned above the settings content. */
 #view-settings .settings-header-row {
-  position: sticky;
-  top: 0;
-  z-index: 8;
+  position: static;
   margin: 0;
   padding: 8px 0;
   background: #f6f8f5;
@@ -2627,7 +2625,7 @@ body { font-size: var(--font-md); }
 }
 #view-settings .settings-segmented-bar {
   position: sticky;
-  top: 58px;
+  top: 0;
   z-index: 7;
   margin-top: 0;
   background: #eaf0e9;
@@ -2635,6 +2633,5 @@ body { font-size: var(--font-md); }
 }
 @media (max-width: 899px) {
   .main-header { background: #fff; }
-  #view-settings .settings-header-row { top: 68px; }
-  #view-settings .settings-segmented-bar { top: 126px; }
+  #view-settings .settings-segmented-bar { top: 68px; }
 }
