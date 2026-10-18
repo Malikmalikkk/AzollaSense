@@ -20,7 +20,7 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./css/style.css?v=40" />
+    <link rel="stylesheet" href="./css/style.css?v=41" />
   </head>
 
   <body>
@@ -1230,7 +1230,7 @@
             <div class="settings-subgroup is-hidden" data-group="accounts" id="account-management-panel">
               <div class="settings-group">
                 <h3 class="settings-group-title">User Accounts</h3>
-                <p class="setting-help-text">Sessions stay signed in until the user signs out or an administrator ends the session.</p>
+                <p class="setting-help-text">After 5 minutes without app activity, a session becomes idle and can be taken over by signing in on another device. An active session can only be ended by its user or an administrator.</p>
                 <div id="managed-user-list" class="account-list" aria-live="polite">
                   <p class="setting-help-text">Loading accounts…</p>
                 </div>
@@ -1445,7 +1445,7 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- Application Scripts -->
-    <script src="./js/app.js?v=42" defer></script>
+    <script src="./js/app.js?v=43" defer></script>
     <script>
       // Register Service Worker for PWA
       if ("serviceWorker" in navigator) {

@@ -190,7 +190,7 @@
   let lastSessionActivitySent = 0;
   function sendSessionActivity() {
     const now = Date.now();
-    if (now - lastSessionActivitySent < 60000) return;
+    if (now - lastSessionActivitySent < 15000) return;
     lastSessionActivitySent = now;
     fetch(backendUrl("/api/auth/activity"), { method: "POST", credentials: "same-origin", cache: "no-store" })
       .then((response) => {
@@ -669,11 +669,11 @@
         const createdDate = new Date(user.created_at);
         created.textContent = `Created ${Number.isNaN(createdDate.getTime()) ? user.created_at : createdDate.toLocaleDateString()}`;
         const status = document.createElement("span");
-        status.className = `account-status ${user.active ? "is-active" : "is-inactive"}`;
-        status.textContent = user.active ? "Active session" : "Signed out";
+        status.className = `account-status is-${user.session_status}`;
+        status.textContent = user.session_status === "active" ? "Active now" : user.session_status === "idle" ? "Idle · can be used on another device" : "Signed out";
         details.append(username, status, created);
         row.append(details);
-        if (user.active) {
+        if (user.session_status !== "signed_out") {
           const signOut = document.createElement("button");
           signOut.className = "account-logout-btn";
           signOut.type = "button";
@@ -735,6 +735,11 @@
       list.textContent = error.message || "Could not load accounts.";
     }
   }
+
+  window.setInterval(() => {
+    const accountPanel = byId("account-management-panel");
+    if (accountPanel && !accountPanel.classList.contains("is-hidden")) loadManagedUsers();
+  }, 30000);
 
 
   /* ------------------------------------------------------------------ */

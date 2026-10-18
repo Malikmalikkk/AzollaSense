@@ -1796,6 +1796,8 @@ input:checked+.slider-knob::before {
 .account-status::before { width: 7px; height: 7px; border-radius: 50%; background: #9aa59b; content: ""; }
 .account-status.is-active { color: #28713b; }
 .account-status.is-active::before { background: #38a354; }
+.account-status.is-idle { color: #986c16; }
+.account-status.is-idle::before { background: #d6a638; }
 .account-status.is-inactive { color: var(--text-muted); }
 .account-admin-label { text-align: right; }
 .account-delete-btn, .account-logout-btn { flex: 0 0 auto; padding: 7px 10px; border: 1px solid #d9e4d9; border-radius: 8px; background: #fff; color: #315b39; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
