@@ -2631,7 +2631,17 @@ body { font-size: var(--font-md); }
   background: #eaf0e9;
   box-shadow: 0 5px 12px rgba(24, 59, 40, .06);
 }
+#view-settings .settings-segmented-bar.is-docked {
+  animation: settings-tabs-dock-in .22s cubic-bezier(.2, .75, .25, 1) both;
+}
+@keyframes settings-tabs-dock-in {
+  from { transform: translateY(-9px); opacity: .82; }
+  to { transform: translateY(0); opacity: 1; }
+}
 @media (max-width: 899px) {
   .main-header { background: #fff; }
   #view-settings .settings-segmented-bar { top: 68px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #view-settings .settings-segmented-bar.is-docked { animation: none; }
 }

@@ -763,6 +763,29 @@
 
   const settingSegments = qsa(".settings-segmented-bar .segment-item");
   const settingGroups = qsa(".settings-subgroup");
+  const settingsBar = qs("#view-settings .settings-segmented-bar");
+  const screenScroller = qs(".screen-scroll-container");
+  if (settingsBar && screenScroller) {
+    let dockCheckPending = false;
+    const updateSettingsBarDock = () => {
+      dockCheckPending = false;
+      if (!settingsBar.closest("#view-settings").classList.contains("active")) {
+        settingsBar.classList.remove("is-docked");
+        return;
+      }
+      const stickyOffset = window.matchMedia("(max-width: 899px)").matches ? 68 : 0;
+      const scrollTop = screenScroller.getBoundingClientRect().top + stickyOffset;
+      const isDocked = settingsBar.getBoundingClientRect().top <= scrollTop + 1;
+      settingsBar.classList.toggle("is-docked", isDocked);
+    };
+    screenScroller.addEventListener("scroll", () => {
+      if (dockCheckPending) return;
+      dockCheckPending = true;
+      window.requestAnimationFrame(updateSettingsBarDock);
+    }, { passive: true });
+    window.addEventListener("resize", updateSettingsBarDock);
+    updateSettingsBarDock();
+  }
 
   settingSegments.forEach((segment) => {
     segment.addEventListener("click", () => {
