@@ -319,8 +319,9 @@ def create_session(user_id, local=False):
     token_hash = hashlib.sha256(token.encode("ascii")).digest()
     with AUTH_DB_LOCK, auth_db() as connection:
         connection.execute("BEGIN IMMEDIATE")
-        if connection.execute("SELECT 1 FROM sessions WHERE user_id=?", (user_id,)).fetchone():
-            return None
+        # A valid password proves control of the account. Rotate its single
+        # session so a lost or cleared browser cookie cannot lock the user out.
+        connection.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
         connection.execute("INSERT INTO sessions(token_hash, user_id, expires_at, is_local) VALUES (?, ?, NULL, ?)", (token_hash, user_id, int(local)))
     return token
 
@@ -1476,8 +1477,6 @@ def auth_setup():
             return jsonify({"error": "That username is already in use."}), 409
     local = is_loopback_request()
     token = create_session(user_id, local)
-    if not token:
-        return jsonify({"error": "This account is already signed in. Ask the system administrator to sign out its active session."}), 409
     return set_session_cookie(jsonify({"success": True}), token, local)
 
 
@@ -1502,8 +1501,6 @@ def auth_login():
         connection.execute("DELETE FROM login_attempts WHERE ip=?", (ip,))
     local = is_loopback_request()
     token = create_session(row["id"], local)
-    if not token:
-        return jsonify({"error": "This account is already signed in. Ask the system administrator to sign out its active session."}), 409
     return set_session_cookie(jsonify({"success": True}), token, local)
 
 
