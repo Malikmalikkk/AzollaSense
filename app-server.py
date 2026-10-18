@@ -126,9 +126,10 @@ def init_alert_db():
 init_alert_db()
 
 
-def _maintain_alert_reminders(active_warnings):
+def _maintain_alert_reminders(active_warnings, initialize_missing=False):
     now = time.time()
     due = []
+    initial = []
     with ALERT_DB_LOCK, sqlite3.connect(ALERT_DB_PATH, timeout=10) as connection:
         saved = {row[0]: row[1:] for row in connection.execute(
             "SELECT alert_key,title,body,severity,last_notified_at FROM alert_reminders"
@@ -139,6 +140,10 @@ def _maintain_alert_reminders(active_warnings):
             prior = saved.get(alert_key)
             if prior and now - prior[3] >= ALERT_REMINDER_SECONDS:
                 due.append((alert_key, *details))
+            elif not prior and initialize_missing:
+                initial.append((alert_key, *details))
+    for alert_key, title, body, severity in initial:
+        _emit_system_alert(title, body, severity, repeat_key=alert_key)
     for alert_key, title, body, severity in due:
         _emit_system_alert(f"Still unresolved: {title}", body, severity, repeat_key=alert_key)
 
@@ -252,11 +257,10 @@ def _evaluate_alert_transitions(telemetry, actuators, settings):
         direction = "at or below" if settings["rain_wet_below_threshold"] == 1 else "at or above"
         reading_text = f"Reading {rain_reading:g} is " if rain_reading is not None else "The sensor reading is "
         active_warnings["rain_wet"] = ("Rain detected", f"{reading_text}{direction} the configured wet threshold of {settings['rain_wet_threshold']:g}; canopy rain protection is active.", "warning")
-    _maintain_alert_reminders(active_warnings)
-
     with alert_state_lock:
         previous = previous_alert_states
         previous_alert_states = {**(previous or {}), **current}
+    _maintain_alert_reminders(active_warnings, initialize_missing=previous is None)
     if previous is None:
         return
 
