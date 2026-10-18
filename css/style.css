@@ -2357,7 +2357,10 @@ body { background: #f3f6f1; }
 .main-header { flex: 0 0 auto; }
 .brand-wrapper { min-width: 0; }
 .brand-text { font-size: 24px; }
-.screen-scroll-container { overscroll-behavior-y: contain; }
+.screen-scroll-container {
+  overscroll-behavior-y: contain;
+  background-color: #f6f8f5;
+}
 .tab-panel { width: 100%; }
 .sub-heading-row, .status-top-bar, .settings-header-row { align-items: center; }
 .section-title-row { min-width: 0; }
