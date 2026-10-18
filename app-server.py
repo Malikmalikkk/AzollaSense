@@ -67,7 +67,7 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 os.makedirs(app.instance_path, exist_ok=True)
 AUTH_DB_PATH = os.path.join(app.instance_path, "auth.sqlite3")
 SESSION_COOKIE = "azollasense_session"
-SESSION_IDLE_TIMEOUT_SECONDS = 30 * 60
+SESSION_IDLE_TIMEOUT_SECONDS = 5 * 60
 SESSION_CHECK_SECONDS = 5
 AUTH_DB_LOCK = threading.RLock()
 TELEMETRY_DB_PATH = os.path.join(app.instance_path, "telemetry.sqlite3")
