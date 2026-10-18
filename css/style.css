@@ -2611,3 +2611,22 @@ body { font-size: var(--font-md); }
   }
   #account-management-panel .account-add-form input { min-height: 42px; }
 }
+
+/* Keep the Settings title and category bar pinned above the settings content. */
+#view-settings .settings-header-row {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  margin: -8px 0 0;
+  padding: 8px 0;
+  background: #f6f8f5;
+  border-bottom: 1px solid rgba(225, 232, 223, .8);
+}
+#view-settings .settings-segmented-bar {
+  position: sticky;
+  top: 58px;
+  z-index: 7;
+  margin-top: 0;
+  background: #eaf0e9;
+  box-shadow: 0 5px 12px rgba(24, 59, 40, .06);
+}
