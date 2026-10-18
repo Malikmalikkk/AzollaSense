@@ -2584,3 +2584,30 @@ body { font-size: var(--font-md); }
   .config-input-pair { gap: 5px; }
   .setting-row-card:has(.config-input-pair) { gap: 6px; }
 }
+
+@media (min-width: 900px) {
+  #account-management-panel .settings-group {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(300px, .8fr);
+    align-items: start;
+    gap: 12px 24px;
+  }
+  #account-management-panel .settings-group > h3,
+  #account-management-panel .settings-group > p {
+    grid-column: 1 / -1;
+  }
+  #account-management-panel .account-list { grid-column: 1; grid-row: 3; }
+  #account-management-panel .account-add-form {
+    grid-column: 2;
+    grid-row: 3;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 20px;
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    background: #fff;
+    box-shadow: var(--shadow-sm);
+  }
+  #account-management-panel .account-add-form input { min-height: 42px; }
+}
