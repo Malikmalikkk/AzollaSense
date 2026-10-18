@@ -1,5 +1,21 @@
 # ESP32 sensor node setup
 
+## Device reboot controls
+
+Settings → Machine Settings exposes reboot controls to the system administrator.
+The ESP32 reboot is sent over its existing serial JSON command link. On the
+Raspberry Pi, the account running `app-server.py` must be allowed to run only
+`/sbin/reboot` without a password. Create `/etc/sudoers.d/azollasense-reboot`
+with `visudo -f /etc/sudoers.d/azollasense-reboot`, replacing `azolla` with the
+service account name:
+
+```sudoers
+azolla ALL=(root) NOPASSWD: /sbin/reboot
+```
+
+The backend invokes `sudo -n /sbin/reboot`; it never accepts a command from the
+browser to execute on the Pi.
+
 ## Install and upload
 
 1. In Arduino IDE, select an ESP32 Dev Module and install Adafruit TSL2591,

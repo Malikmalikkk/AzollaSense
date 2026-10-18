@@ -2110,6 +2110,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .settings-card-list { gap: 0; overflow: hidden; border: 1px solid var(--card-border); border-radius: 16px; background: #fff; box-shadow: var(--shadow-sm); }
 .settings-card-list > .settings-group-title { margin: 0; padding: 14px 16px 8px; background: #fff; font-size: 14px; }
 .settings-card-list > .setting-help-text { padding: 12px 16px 15px; }
+.device-action-row { gap: 16px; }
+.device-action-btn { flex: 0 0 auto; padding: 9px 16px; border: 1px solid #c62828; border-radius: 9px; color: #b71c1c; background: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.device-action-btn:hover { background: #fff5f5; }
+.device-action-btn:disabled { opacity: .55; cursor: wait; }
 .setting-row-card {
   min-width: 0;
   padding: 14px 16px;

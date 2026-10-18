@@ -16,6 +16,7 @@ import ipaddress
 import secrets
 import sqlite3
 import signal
+import subprocess
 import threading
 import time
 from collections import deque
@@ -27,7 +28,7 @@ from zoneinfo import ZoneInfo
 import cv2
 import numpy as np
 try:
-    from picamera2 import Picamera2
+    from picamera2 import Picamera2 # type: ignore
 except ImportError:
     Picamera2 = None
 from flask import Flask, Response, jsonify, request, send_from_directory, redirect, make_response, g, stream_with_context
@@ -67,7 +68,6 @@ os.makedirs(app.instance_path, exist_ok=True)
 AUTH_DB_PATH = os.path.join(app.instance_path, "auth.sqlite3")
 SESSION_COOKIE = "azollasense_session"
 SESSION_IDLE_TIMEOUT_SECONDS = 30 * 60
-SESSION_REFRESH_SECONDS = 60
 SESSION_CHECK_SECONDS = 5
 AUTH_DB_LOCK = threading.RLock()
 TELEMETRY_DB_PATH = os.path.join(app.instance_path, "telemetry.sqlite3")
@@ -286,6 +286,10 @@ def init_auth_db():
             for user_id, token_hash in keep.items():
                 connection.execute("INSERT INTO sessions(token_hash,user_id,expires_at,is_local) VALUES(?,?,?,0)", (token_hash, user_id, migrated_expiry))
             connection.execute("DROP TABLE sessions_legacy")
+        # Older loopback sessions were deliberately permanent and have NULL expiry.
+        # Give those sessions the same idle deadline as every other login.
+        legacy_expiry = (datetime.now(timezone.utc) + timedelta(seconds=SESSION_IDLE_TIMEOUT_SECONDS)).isoformat()
+        connection.execute("UPDATE sessions SET expires_at=? WHERE expires_at IS NULL", (legacy_expiry,))
         connection.execute("CREATE TABLE IF NOT EXISTS login_attempts (ip TEXT PRIMARY KEY, failures INTEGER NOT NULL, window_started REAL NOT NULL, locked_until REAL NOT NULL DEFAULT 0)")
 
 
@@ -313,7 +317,7 @@ def is_system_admin(user=None):
 def create_session(user_id, local=False):
     token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token.encode("ascii")).digest()
-    expiry = None if local else (datetime.now(timezone.utc) + timedelta(seconds=SESSION_IDLE_TIMEOUT_SECONDS)).isoformat()
+    expiry = (datetime.now(timezone.utc) + timedelta(seconds=SESSION_IDLE_TIMEOUT_SECONDS)).isoformat()
     with AUTH_DB_LOCK, auth_db() as connection:
         connection.execute("BEGIN IMMEDIATE")
         connection.execute("DELETE FROM sessions WHERE expires_at IS NOT NULL AND expires_at <= ?", (datetime.now(timezone.utc).isoformat(),))
@@ -332,7 +336,7 @@ def load_local_user():
         with AUTH_DB_LOCK, auth_db() as connection:
             row = connection.execute("SELECT users.id, users.username, sessions.expires_at, sessions.is_local FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=?", (token_hash,)).fetchone()
             if row:
-                if row["is_local"] or (row["expires_at"] and datetime.fromisoformat(row["expires_at"]) > datetime.now(timezone.utc)):
+                if row["expires_at"] and datetime.fromisoformat(row["expires_at"]) > datetime.now(timezone.utc):
                     g.user = {"id": row["id"], "username": row["username"], "token_hash": token_hash, "is_local": bool(row["is_local"])}
                 else:
                     connection.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash,))
@@ -363,8 +367,6 @@ def session_is_valid(token_hash, refresh=False):
         row = connection.execute("SELECT expires_at,is_local FROM sessions WHERE token_hash=?", (token_hash,)).fetchone()
         if not row:
             return False
-        if row["is_local"]:
-            return True
         now = datetime.now(timezone.utc)
         if not row["expires_at"] or datetime.fromisoformat(row["expires_at"]) <= now:
             connection.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash,))
@@ -1284,18 +1286,14 @@ def generate_camera_stream(token_hash):
     """Fan out the newest shared JPEG while this authenticated viewer remains connected."""
     global latest_stream_frame
     last_sequence = 0
-    last_session_refresh = 0.0
     last_session_check = 0.0
     try:
         while True:
             now = time.monotonic()
             if now - last_session_check >= SESSION_CHECK_SECONDS:
-                refresh = now - last_session_refresh >= SESSION_REFRESH_SECONDS
-                if not session_is_valid(token_hash, refresh=refresh):
+                if not session_is_valid(token_hash):
                     break
                 last_session_check = now
-                if refresh:
-                    last_session_refresh = now
             with stream_condition:
                 if not state["stream_active"]:
                     break
@@ -1447,7 +1445,7 @@ def serve_login():
 
 
 def set_session_cookie(response, token, local=False):
-    response.set_cookie(SESSION_COOKIE, token, max_age=None if local else SESSION_IDLE_TIMEOUT_SECONDS,
+    response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_IDLE_TIMEOUT_SECONDS,
                         httponly=True, secure=request_is_https(), samesite="Lax", path="/")
     response.headers["Cache-Control"] = "no-store"
     return response
@@ -1529,7 +1527,7 @@ def auth_activity():
     if g.user and not session_is_valid(g.user["token_hash"], refresh=True):
         return jsonify({"error": "Session expired."}), 401
     response = jsonify({"success": True})
-    if g.user and not g.user["is_local"]:
+    if g.user:
         set_session_cookie(response, request.cookies.get(SESSION_COOKIE), False)
     return response
 
@@ -1813,6 +1811,30 @@ def api_set_actuator():
     data = request.get_json(silent=True) or {}
     reply = handle_set_actuator(data)
     return jsonify(reply), (200 if reply.get("success") else 400)
+
+
+@app.route("/api/devices/reboot", methods=["POST"])
+def api_reboot_device():
+    if not is_system_admin():
+        return jsonify({"success": False, "error": "System administrator access required."}), 403
+    data = request.get_json(silent=True) or {}
+    target = data.get("target")
+    if target == "esp32":
+        if not send_device_command({"type": "reboot"}):
+            return jsonify({"success": False, "error": "ESP32 is not connected."}), 503
+        return jsonify({"success": True, "message": "ESP32 reboot requested."})
+    if target == "raspberry-pi":
+        if os.name == "nt":
+            return jsonify({"success": False, "error": "Raspberry Pi reboot is available only on the Pi."}), 501
+        try:
+            subprocess.Popen(["sudo", "-n", "/sbin/reboot"], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True)
+        except OSError as exc:
+            print(f"[SYSTEM] Could not request Raspberry Pi reboot: {exc}")
+            return jsonify({"success": False, "error": "Could not start the Raspberry Pi reboot command."}), 500
+        return jsonify({"success": True, "message": "Raspberry Pi reboot requested."})
+    return jsonify({"success": False, "error": "Choose a valid reboot target."}), 400
 
 
 @app.route("/api/settings", methods=["GET", "POST"])

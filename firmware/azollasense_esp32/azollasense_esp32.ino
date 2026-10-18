@@ -177,6 +177,13 @@ void sendTelemetry(float waterDistance, float temperature, float phVoltage, floa
 void processCommand(const String& line) {
   StaticJsonDocument<768> doc;
   if (deserializeJson(doc, line)) return;
+  if (doc["type"] == "reboot") {
+    Serial.println("{\"type\":\"rebooting\"}");
+    Serial.flush();
+    delay(100);
+    ESP.restart();
+    return;
+  }
   const bool restoringState = doc["type"] == "restore_state";
   const bool heartbeat = doc["type"] == "heartbeat";
   if (restoringState || heartbeat) controllerReady = true;

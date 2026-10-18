@@ -229,10 +229,6 @@
   ["pointerdown", "keydown", "touchstart", "wheel"].forEach((eventName) => {
     document.addEventListener(eventName, () => sendSessionActivity(), { passive: true });
   });
-  window.setInterval(() => {
-    if (streamRunning) sendSessionActivity(true);
-  }, 60000);
-
   function resetVisionToggle() {
     aiVisionOn = true;
     if (!cvToggleBtn) return;
@@ -603,10 +599,35 @@
       if (account.is_admin) {
         const accountTab = byId("account-management-tab");
         if (accountTab) accountTab.classList.remove("is-hidden");
+        const rebootControls = byId("device-reboot-controls");
+        if (rebootControls) rebootControls.classList.remove("is-hidden");
         loadManagedUsers();
       }
     })
     .catch(() => { location.replace("/login"); });
+
+  qsa("[data-device-reboot]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const target = button.dataset.deviceReboot;
+      const label = target === "esp32" ? "ESP32" : "Raspberry Pi";
+      if (!window.confirm(`Reboot the ${label} now?`)) return;
+      button.disabled = true;
+      try {
+        const response = await fetch(backendUrl("/api/devices/reboot"), {
+          method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ target })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `Could not reboot ${label}.`);
+        showToast(result.message || `${label} reboot requested.`);
+      } catch (error) {
+        showToast(error.message || `Could not reboot ${label}.`);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
 
   if (logoutButton) logoutButton.addEventListener("click", async () => {
     logoutButton.disabled = true;
