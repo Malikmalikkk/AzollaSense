@@ -2620,7 +2620,7 @@ body { font-size: var(--font-md); }
   position: sticky;
   top: 0;
   z-index: 8;
-  margin: -8px 0 0;
+  margin: 0;
   padding: 8px 0;
   background: #f6f8f5;
   border-bottom: 1px solid rgba(225, 232, 223, .8);
@@ -2634,6 +2634,7 @@ body { font-size: var(--font-md); }
   box-shadow: 0 5px 12px rgba(24, 59, 40, .06);
 }
 @media (max-width: 899px) {
+  .main-header { background: #fff; }
   #view-settings .settings-header-row { top: 68px; }
   #view-settings .settings-segmented-bar { top: 126px; }
 }
