@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#194627">
   <title>Sign in · AzollaSense</title>
+  <link rel="icon" type="image/png" href="./assets/logo.png">
+  <link rel="apple-touch-icon" href="./assets/logo.png">
+  <link rel="manifest" href="./manifest.json">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="./css/style.css?v=21">
 </head>
 <body class="auth-page">
@@ -24,5 +29,14 @@
     <p class="auth-local-note">Your account is stored on this Raspberry Pi. Internet access is not required.</p>
   </main>
   <script src="./js/auth.js?v=2" defer></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js").catch((err) =>
+          console.log("Service Worker registration failed:", err),
+        );
+      });
+    }
+  </script>
 </body>
 </html>
