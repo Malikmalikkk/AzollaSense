@@ -414,7 +414,7 @@
 
   function displaySystemAlert(alert) {
     addRecentNotification(alert);
-    if (notifToggle?.checked && alert && typeof alert.body === "string") {
+    if (alert && typeof alert.body === "string") {
       showToast(`${alert.title ? `${alert.title}: ` : ""}${alert.body}`);
     }
   }
@@ -841,7 +841,7 @@
         else await disablePushNotifications();
         notifStatusText.textContent = enabling ? "Enabled" : "Disabled";
         notifStatusText.title = "";
-        showToast(enabling ? "System notifications enabled." : "System notifications disabled.");
+        showToast(enabling ? "Background push alerts enabled." : "Background push alerts disabled.");
       } catch (error) {
         notifToggle.checked = !enabling;
         notifStatusText.textContent = notifToggle.checked ? "Enabled" : "Disabled";
