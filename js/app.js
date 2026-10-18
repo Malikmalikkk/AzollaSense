@@ -599,8 +599,6 @@
       if (account.is_admin) {
         const accountTab = byId("account-management-tab");
         if (accountTab) accountTab.classList.remove("is-hidden");
-        const rebootControls = byId("device-reboot-controls");
-        if (rebootControls) rebootControls.classList.remove("is-hidden");
         loadManagedUsers();
       }
     })

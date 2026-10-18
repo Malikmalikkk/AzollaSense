@@ -1815,8 +1815,6 @@ def api_set_actuator():
 
 @app.route("/api/devices/reboot", methods=["POST"])
 def api_reboot_device():
-    if not is_system_admin():
-        return jsonify({"success": False, "error": "System administrator access required."}), 403
     data = request.get_json(silent=True) or {}
     target = data.get("target")
     if target == "esp32":

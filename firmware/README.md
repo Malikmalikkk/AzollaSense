@@ -2,7 +2,7 @@
 
 ## Device reboot controls
 
-Settings → Machine Settings exposes reboot controls to the system administrator.
+Settings → Machine Settings exposes reboot controls to signed-in users.
 The ESP32 reboot is sent over its existing serial JSON command link. On the
 Raspberry Pi, the account running `app-server.py` must be allowed to run only
 `/sbin/reboot` without a password. Create `/etc/sudoers.d/azollasense-reboot`
