@@ -21,7 +21,7 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./css/style.css?v=28" />
+    <link rel="stylesheet" href="./css/style.css?v=29" />
   </head>
 
   <body>
@@ -1272,17 +1272,19 @@
             <div class="settings-subgroup is-hidden" data-group="accounts" id="account-management-panel">
               <div class="settings-group">
                 <h3 class="settings-group-title">User Accounts</h3>
+                <p class="setting-help-text">Sessions stay signed in until the user signs out or an administrator ends the session.</p>
                 <div id="managed-user-list" class="account-list" aria-live="polite">
                   <p class="setting-help-text">Loading accounts…</p>
                 </div>
                 <form id="add-user-form" class="local-user-form account-add-form">
                   <h4>Add an account</h4>
+                  <p class="account-form-help">Choose a username and a password with at least 10 characters.</p>
                   <label for="new-user-name">Username</label>
-                  <input id="new-user-name" name="username" required minlength="3" maxlength="40" autocomplete="off" />
+                  <input id="new-user-name" name="username" required minlength="3" maxlength="40" pattern="[A-Za-z0-9_-]+" title="Use letters, numbers, underscores, and hyphens." autocomplete="username" autocapitalize="none" />
                   <label for="new-user-password">Password</label>
                   <input id="new-user-password" name="password" type="password" required minlength="10" maxlength="256" autocomplete="new-password" />
                   <button type="submit">Create account</button>
-                  <p id="add-user-message" role="status"></p>
+                  <p id="add-user-message" role="status" aria-live="polite"></p>
                 </form>
               </div>
             </div>
@@ -1485,7 +1487,7 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- Application Scripts -->
-    <script src="./js/app.js?v=37" defer></script>
+    <script src="./js/app.js?v=38" defer></script>
     <script>
       // Register Service Worker for PWA
       if ("serviceWorker" in navigator) {

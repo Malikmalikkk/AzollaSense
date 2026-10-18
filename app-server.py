@@ -67,7 +67,6 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 os.makedirs(app.instance_path, exist_ok=True)
 AUTH_DB_PATH = os.path.join(app.instance_path, "auth.sqlite3")
 SESSION_COOKIE = "azollasense_session"
-SESSION_IDLE_TIMEOUT_SECONDS = 5 * 60
 SESSION_CHECK_SECONDS = 5
 AUTH_DB_LOCK = threading.RLock()
 TELEMETRY_DB_PATH = os.path.join(app.instance_path, "telemetry.sqlite3")
@@ -274,22 +273,23 @@ def init_auth_db():
             for row in rows:
                 if row["user_id"] in keep:
                     continue
-                try:
-                    if datetime.fromisoformat(row["expires_at"]) <= now:
+                if row["expires_at"]:
+                    try:
+                        if datetime.fromisoformat(row["expires_at"]) <= now:
+                            continue
+                    except ValueError:
                         continue
-                except (TypeError, ValueError):
-                    continue
                 keep[row["user_id"]] = row["token_hash"]
             connection.execute("ALTER TABLE sessions RENAME TO sessions_legacy")
             connection.execute("CREATE TABLE sessions (token_hash BLOB PRIMARY KEY, user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE, expires_at TEXT, is_local INTEGER NOT NULL DEFAULT 0)")
-            migrated_expiry = (now + timedelta(seconds=SESSION_IDLE_TIMEOUT_SECONDS)).isoformat()
             for user_id, token_hash in keep.items():
-                connection.execute("INSERT INTO sessions(token_hash,user_id,expires_at,is_local) VALUES(?,?,?,0)", (token_hash, user_id, migrated_expiry))
+                connection.execute("INSERT INTO sessions(token_hash,user_id,expires_at,is_local) VALUES(?,?,NULL,0)", (token_hash, user_id))
             connection.execute("DROP TABLE sessions_legacy")
-        # Older loopback sessions were deliberately permanent and have NULL expiry.
-        # Give those sessions the same idle deadline as every other login.
-        legacy_expiry = (datetime.now(timezone.utc) + timedelta(seconds=SESSION_IDLE_TIMEOUT_SECONDS)).isoformat()
-        connection.execute("UPDATE sessions SET expires_at=? WHERE expires_at IS NULL", (legacy_expiry,))
+        # Expired sessions from the previous timed-login behavior are discarded;
+        # every remaining session becomes permanent until explicitly revoked.
+        now = datetime.now(timezone.utc).isoformat()
+        connection.execute("DELETE FROM sessions WHERE expires_at IS NOT NULL AND expires_at <= ?", (now,))
+        connection.execute("UPDATE sessions SET expires_at=NULL")
         connection.execute("CREATE TABLE IF NOT EXISTS login_attempts (ip TEXT PRIMARY KEY, failures INTEGER NOT NULL, window_started REAL NOT NULL, locked_until REAL NOT NULL DEFAULT 0)")
 
 
@@ -317,13 +317,11 @@ def is_system_admin(user=None):
 def create_session(user_id, local=False):
     token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token.encode("ascii")).digest()
-    expiry = (datetime.now(timezone.utc) + timedelta(seconds=SESSION_IDLE_TIMEOUT_SECONDS)).isoformat()
     with AUTH_DB_LOCK, auth_db() as connection:
         connection.execute("BEGIN IMMEDIATE")
-        connection.execute("DELETE FROM sessions WHERE expires_at IS NOT NULL AND expires_at <= ?", (datetime.now(timezone.utc).isoformat(),))
         if connection.execute("SELECT 1 FROM sessions WHERE user_id=?", (user_id,)).fetchone():
             return None
-        connection.execute("INSERT INTO sessions(token_hash, user_id, expires_at, is_local) VALUES (?, ?, ?, ?)", (token_hash, user_id, expiry, int(local)))
+        connection.execute("INSERT INTO sessions(token_hash, user_id, expires_at, is_local) VALUES (?, ?, NULL, ?)", (token_hash, user_id, int(local)))
     return token
 
 
@@ -336,10 +334,7 @@ def load_local_user():
         with AUTH_DB_LOCK, auth_db() as connection:
             row = connection.execute("SELECT users.id, users.username, sessions.expires_at, sessions.is_local FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=?", (token_hash,)).fetchone()
             if row:
-                if row["expires_at"] and datetime.fromisoformat(row["expires_at"]) > datetime.now(timezone.utc):
-                    g.user = {"id": row["id"], "username": row["username"], "token_hash": token_hash, "is_local": bool(row["is_local"])}
-                else:
-                    connection.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash,))
+                g.user = {"id": row["id"], "username": row["username"], "token_hash": token_hash, "is_local": bool(row["is_local"])}
 
     path = request.path
     public = path in ("/api/auth/status", "/api/auth/setup", "/api/auth/login", "/login") or path.startswith("/css/") or path.startswith("/js/") or path.startswith("/assets/") and not path.startswith("/assets/captures/") or path in ("/manifest.json", "/sw.js", "/favicon.ico")
@@ -364,17 +359,7 @@ def require_socket_login(auth=None):
 
 def session_is_valid(token_hash, refresh=False):
     with AUTH_DB_LOCK, auth_db() as connection:
-        row = connection.execute("SELECT expires_at,is_local FROM sessions WHERE token_hash=?", (token_hash,)).fetchone()
-        if not row:
-            return False
-        now = datetime.now(timezone.utc)
-        if not row["expires_at"] or datetime.fromisoformat(row["expires_at"]) <= now:
-            connection.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash,))
-            return False
-        if refresh:
-            expiry = (now + timedelta(seconds=SESSION_IDLE_TIMEOUT_SECONDS)).isoformat()
-            connection.execute("UPDATE sessions SET expires_at=? WHERE token_hash=?", (expiry, token_hash))
-        return True
+        return connection.execute("SELECT 1 FROM sessions WHERE token_hash=?", (token_hash,)).fetchone() is not None
 
 
 def enforce_socket_session(sid, token_hash):
@@ -1445,7 +1430,7 @@ def serve_login():
 
 
 def set_session_cookie(response, token, local=False):
-    response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_IDLE_TIMEOUT_SECONDS,
+    response.set_cookie(SESSION_COOKIE, token, max_age=60 * 60 * 24 * 365 * 10,
                         httponly=True, secure=request_is_https(), samesite="Lax", path="/")
     response.headers["Cache-Control"] = "no-store"
     return response
@@ -1492,7 +1477,7 @@ def auth_setup():
     local = is_loopback_request()
     token = create_session(user_id, local)
     if not token:
-        return jsonify({"error": "This account already has an active session. Log out there or wait for it to expire."}), 409
+        return jsonify({"error": "This account is already signed in. Ask the system administrator to sign out its active session."}), 409
     return set_session_cookie(jsonify({"success": True}), token, local)
 
 
@@ -1518,17 +1503,15 @@ def auth_login():
     local = is_loopback_request()
     token = create_session(row["id"], local)
     if not token:
-        return jsonify({"error": "This account already has an active session. Log out there or wait for it to expire."}), 409
+        return jsonify({"error": "This account is already signed in. Ask the system administrator to sign out its active session."}), 409
     return set_session_cookie(jsonify({"success": True}), token, local)
 
 
 @app.route("/api/auth/activity", methods=["POST"])
 def auth_activity():
-    if g.user and not session_is_valid(g.user["token_hash"], refresh=True):
-        return jsonify({"error": "Session expired."}), 401
     response = jsonify({"success": True})
     if g.user:
-        set_session_cookie(response, request.cookies.get(SESSION_COOKIE), False)
+        set_session_cookie(response, request.cookies.get(SESSION_COOKIE), g.user["is_local"])
     return response
 
 
@@ -1549,7 +1532,7 @@ def auth_list_users():
     if not is_system_admin():
         return jsonify({"error": "System administrator access required."}), 403
     with AUTH_DB_LOCK, auth_db() as connection:
-        rows = connection.execute("SELECT id,username,created_at FROM users ORDER BY username COLLATE NOCASE").fetchall()
+        rows = connection.execute("SELECT users.id,users.username,users.created_at,EXISTS(SELECT 1 FROM sessions WHERE sessions.user_id=users.id) AS active FROM users ORDER BY users.username COLLATE NOCASE").fetchall()
     return no_store(jsonify({"users": [dict(row) for row in rows]}))
 
 
@@ -1585,6 +1568,18 @@ def auth_remove_user(user_id):
         connection.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
         connection.execute("DELETE FROM users WHERE id=?", (user_id,))
     return jsonify({"success": True})
+
+
+@app.route("/api/auth/users/<int:user_id>/logout", methods=["POST"])
+def auth_logout_user(user_id):
+    if not is_system_admin():
+        return jsonify({"error": "System administrator access required."}), 403
+    with AUTH_DB_LOCK, auth_db() as connection:
+        target = connection.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone()
+        if not target:
+            return jsonify({"error": "Account not found."}), 404
+        cursor = connection.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+    return jsonify({"success": True, "logged_out": cursor.rowcount > 0})
 
 
 @app.route("/video_feed")

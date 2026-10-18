@@ -639,10 +639,14 @@
   if (addUserForm) addUserForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const message = byId("add-user-message");
+    const submit = addUserForm.querySelector('button[type="submit"]');
     const formData = new FormData(addUserForm);
+    message.textContent = "Creating account…";
+    message.classList.remove("is-error");
+    if (submit) submit.disabled = true;
     try {
       const response = await fetch(backendUrl("/api/auth/users"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: formData.get("username"), password: formData.get("password") })
       });
       const result = await response.json();
@@ -650,7 +654,12 @@
       addUserForm.reset();
       message.textContent = "Account created on this Raspberry Pi.";
       loadManagedUsers();
-    } catch (error) { message.textContent = error.message || "Could not reach the local server."; }
+    } catch (error) {
+      message.textContent = error.message || "Could not reach the local server.";
+      message.classList.add("is-error");
+    } finally {
+      if (submit) submit.disabled = false;
+    }
   });
 
   async function loadManagedUsers() {
@@ -671,8 +680,34 @@
         created.className = "account-created-at";
         const createdDate = new Date(user.created_at);
         created.textContent = `Created ${Number.isNaN(createdDate.getTime()) ? user.created_at : createdDate.toLocaleDateString()}`;
-        details.append(username, created);
+        const status = document.createElement("span");
+        status.className = `account-status ${user.active ? "is-active" : "is-inactive"}`;
+        status.textContent = user.active ? "Active session" : "Signed out";
+        details.append(username, status, created);
         row.append(details);
+        if (user.active) {
+          const signOut = document.createElement("button");
+          signOut.className = "account-logout-btn";
+          signOut.type = "button";
+          signOut.textContent = "Sign out";
+          signOut.setAttribute("aria-label", `Sign out ${user.username}`);
+          signOut.addEventListener("click", async () => {
+            signOut.disabled = true;
+            try {
+              const response = await fetch(backendUrl(`/api/auth/users/${user.id}/logout`), {
+                method: "POST", credentials: "same-origin"
+              });
+              const result = await response.json();
+              if (!response.ok) throw new Error(result.error || "Could not sign out account.");
+              loadManagedUsers();
+              showToast(`Signed out ${user.username}.`);
+            } catch (error) {
+              signOut.disabled = false;
+              showToast(error.message || "Could not reach the local server.");
+            }
+          });
+          row.append(signOut);
+        }
         if (user.username.toLowerCase() === "malik") {
           const role = document.createElement("span");
           role.className = "account-admin-label";

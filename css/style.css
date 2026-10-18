@@ -1810,10 +1810,23 @@ input:checked+.slider-knob::before {
 .account-list-row > div { display: grid; gap: 4px; min-width: 0; }
 .account-list-row strong { overflow-wrap: anywhere; color: var(--text-primary); font-size: 13px; }
 .account-created-at, .account-admin-label { color: var(--text-muted); font-size: 11px; }
+.account-status { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; }
+.account-status::before { width: 7px; height: 7px; border-radius: 50%; background: #9aa59b; content: ""; }
+.account-status.is-active { color: #28713b; }
+.account-status.is-active::before { background: #38a354; }
+.account-status.is-inactive { color: var(--text-muted); }
 .account-admin-label { text-align: right; }
-.account-delete-btn { flex: 0 0 auto; padding: 7px 10px; border: 1px solid #efd4d0; border-radius: 8px; background: #fff8f7; color: #a33b30; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-.account-delete-btn:disabled { opacity: .55; cursor: wait; }
+.account-delete-btn, .account-logout-btn { flex: 0 0 auto; padding: 7px 10px; border: 1px solid #d9e4d9; border-radius: 8px; background: #fff; color: #315b39; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.account-delete-btn { border-color: #efd4d0; background: #fff8f7; color: #a33b30; }
+.account-delete-btn:disabled, .account-logout-btn:disabled { opacity: .55; cursor: wait; }
 .account-add-form { max-width: 480px; }
+.account-add-form .account-form-help { min-height: 0; color: var(--text-muted); line-height: 1.5; }
+.account-add-form #add-user-message.is-error { color: #a33b30; }
+.account-add-form button:disabled { opacity: .6; cursor: wait; }
+@media (max-width: 560px) {
+  .account-list-row { align-items: flex-start; flex-wrap: wrap; }
+  .account-list-row > div { flex: 1 1 100%; }
+}
 
 /* ========================================================================
    AzollaSense visual system refresh
