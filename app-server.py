@@ -459,9 +459,15 @@ def load_local_user():
                 g.user = {"id": row["id"], "username": row["username"], "token_hash": token_hash, "is_local": bool(row["is_local"])}
 
     path = request.path
-    public = path in ("/api/auth/status", "/api/auth/setup", "/api/auth/login", "/login") or path.startswith("/css/") or path.startswith("/js/") or path.startswith("/assets/") and not path.startswith("/assets/captures/") or path in ("/manifest.json", "/sw.js", "/favicon.ico")
+    public = (
+        path in ("/api/auth/status", "/api/auth/setup", "/api/auth/login", "/login")
+        or path.startswith("/css/")
+        or path.startswith("/js/")
+        or (path.startswith("/assets/") and not path.startswith("/assets/captures/"))
+        or path in ("/manifest.json", "/sw.js", "/favicon.ico")
+    )
     if not public and g.user is None:
-        if path.startswith("/api/") or path in ("/video_feed", "/stop_stream"):
+        if path.startswith("/api/") or path == "/video_feed":
             return jsonify({"error": "Authentication required."}), 401
         return redirect("/login", code=302)
 
@@ -500,14 +506,14 @@ latest_stream_frame = None
 stream_frame_sequence = 0
 state = {
     "telemetry": {
-        "water_level": 26.0,
+        "water_level": None,
         "water_distance_cm": None,
-        "temperature": 31.5,
-        "ph": 7.2,
+        "temperature": None,
+        "ph": None,
         "ph_voltage": None,
-        "green_cov": 0.0,
-        "brown_cov": 0.0,
-        "total_cov": 0.0,
+        "green_cov": None,
+        "brown_cov": None,
+        "total_cov": None,
         "lux": None,
         "rain_sensor_raw": None,
         "rain_detected": None,
@@ -832,24 +838,39 @@ def serial_reader_thread():
             except json.JSONDecodeError:
                 print(f"[SERIAL] Ignoring non-JSON line: {line[:120]}")
                 continue
+            if not isinstance(message, dict):
+                print("[SERIAL] Ignoring JSON input that is not an object")
+                continue
             if message.get("type") == "telemetry":
                 last_telemetry_at = time.monotonic()
                 with settings_lock:
                     settings = dict(sensor_settings)
 
-                def numeric_reading(name):
+                def numeric_reading(name, minimum=None, maximum=None):
                     value = message.get(name)
-                    return float(value) if isinstance(value, (int, float)) and math.isfinite(value) else None
+                    if not isinstance(value, (int, float)) or isinstance(value, bool):
+                        return None
+                    try:
+                        value = float(value)
+                    except OverflowError:
+                        return None
+                    if not math.isfinite(value):
+                        return None
+                    if ((minimum is not None and value < minimum)
+                            or (maximum is not None and value > maximum)):
+                        return None
+                    return value
 
-                distance = numeric_reading("water_distance_cm")
-                ph_voltage = numeric_reading("ph_voltage")
+                distance = numeric_reading("water_distance_cm", 0, 500)
+                ph_voltage = numeric_reading("ph_voltage", 0, 3.3)
                 water_level = settings["tank_depth_cm"] - distance + settings["water_level_offset_cm"] if distance is not None else None
                 ph_span = settings["ph4_voltage"] - settings["ph7_voltage"]
-                ph = (7.0 + (ph_voltage - settings["ph7_voltage"]) * (4.0 - 7.0) / ph_span
-                      if ph_voltage is not None and abs(ph_span) >= 0.05 else None)
-                temperature = numeric_reading("temperature")
-                lux = numeric_reading("lux")
-                rain_sensor_raw = numeric_reading("rain_sensor_raw")
+                calibrated_ph = (7.0 + (ph_voltage - settings["ph7_voltage"]) * (4.0 - 7.0) / ph_span
+                                 if ph_voltage is not None and abs(ph_span) >= 0.05 else None)
+                ph = calibrated_ph if calibrated_ph is not None and 0 <= calibrated_ph <= 14 else None
+                temperature = numeric_reading("temperature", -55, 125)
+                lux = numeric_reading("lux", 0, 200000)
+                rain_sensor_raw = numeric_reading("rain_sensor_raw", 0, 4095)
                 if rain_sensor_raw is not None and not 0 <= rain_sensor_raw <= 4095:
                     rain_sensor_raw = None
                 rain_wet = None
@@ -968,17 +989,15 @@ def serial_reader_thread():
                     if should_publish:
                         state["last_telemetry_publish_monotonic"] = now_monotonic
                         for key, value in published_readings.items():
-                            if key == "rain_sensor_raw":
-                                state["telemetry"][key] = round(value, 0) if value is not None else None
-                            elif value is not None:
-                                state["telemetry"][key] = round(value, 2)
+                            digits = 0 if key == "rain_sensor_raw" else 2
+                            state["telemetry"][key] = round(value, digits) if value is not None else None
                         state["telemetry"]["rain_detected"] = rain_wet
                         state["telemetry"]["rain_protection_active"] = rain_protection_active
                         state["telemetry"]["rain_dry_remaining_seconds"] = (
                             max(0, int(300 - (now_monotonic - rain_dry_since_monotonic)))
                             if rain_protection_active and rain_dry_since_monotonic is not None else None
                         )
-                        state["telemetry"]["sensor_updated_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+                        state["telemetry"]["sensor_updated_at"] = datetime.now(PH_TIMEZONE).isoformat(timespec="seconds")
                     payload = dict(state["telemetry"]) if should_publish else None
                     rain_remaining = (
                         max(0, int(300 - (now_monotonic - rain_dry_since_monotonic)))
@@ -1021,7 +1040,14 @@ def serial_reader_thread():
                 state["actuators"]["device_connected"] = False
                 state["camera_cover_open"] = None
                 state["camera_cover_moving"] = False
+                for key in ("water_distance_cm", "water_level", "temperature", "ph", "ph_voltage", "lux", "rain_sensor_raw", "rain_detected", "sensor_updated_at"):
+                    state["telemetry"][key] = None
+                state["telemetry"]["rain_protection_active"] = rain_protection_active
+                state["telemetry"]["rain_dry_remaining_seconds"] = None
+                state["actuators"]["pump_auto_running"] = False
+                state["actuators"]["solenoid"] = False
             socketio.emit("actuator_update", dict(state["actuators"]))
+            socketio.emit("telemetry_update", dict(state["telemetry"]))
             time.sleep(2)
 
 
@@ -1038,6 +1064,18 @@ def load_model():
             state["model"] = None
             state["model_status"] = f"unavailable ({exc})"
         print(f"[AI VISION] WARNING: model not available ({exc}). Serving raw camera feed.")
+
+
+def disable_model_after_error(exc):
+    """Keep camera capture available when a loaded model fails at inference time."""
+    with state_lock:
+        state["model"] = None
+        state["model_status"] = f"unavailable ({exc})"
+        state["telemetry"]["green_cov"] = None
+        state["telemetry"]["brown_cov"] = None
+        state["telemetry"]["total_cov"] = None
+        state["cv_updated_monotonic"] = None
+    print(f"[AI VISION] Inference failed; raw camera feed continues: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -1196,16 +1234,21 @@ def _capture_image(force=False):
     output = frame
     detection_count = 0
     if model is not None:
-        result = model(frame, verbose=False, conf=YOLO_CONFIDENCE_THRESHOLD)[0]
-        brown_pct = green_pct = 0.0
-        if result.masks is not None and result.boxes is not None:
-            masks = result.masks.data.cpu().numpy()
-            classes = result.boxes.cls.cpu().numpy().astype(int)
-            detection_count = len(classes)
-            pixels = height * width
-            brown_pct = compute_coverage(masks, classes, 0, height, width, pixels)
-            green_pct = compute_coverage(masks, classes, 1, height, width, pixels)
-        output = result.plot(conf=False, labels=False, boxes=False, masks=True)
+        try:
+            result = model(frame, verbose=False, conf=YOLO_CONFIDENCE_THRESHOLD)[0]
+            brown_pct = green_pct = 0.0
+            if result.masks is not None and result.boxes is not None:
+                masks = result.masks.data.cpu().numpy()
+                classes = result.boxes.cls.cpu().numpy().astype(int)
+                detection_count = len(classes)
+                pixels = height * width
+                brown_pct = compute_coverage(masks, classes, 0, height, width, pixels)
+                green_pct = compute_coverage(masks, classes, 1, height, width, pixels)
+            output = result.plot(conf=False, labels=False, boxes=False, masks=True)
+        except Exception as exc:
+            disable_model_after_error(exc)
+            model_status = f"unavailable ({exc})"
+            model = None
 
     os.makedirs(CAPTURE_DIR, exist_ok=True)
     captured_at = datetime.now(PH_TIMEZONE)
@@ -1308,7 +1351,7 @@ def camera_stream_worker(generation):
 
     try:
         while True:
-            frame_start = time.time()
+            frame_start = time.monotonic()
 
             with state_lock:
                 if not state["stream_active"] or state["camera"] is None:
@@ -1336,21 +1379,25 @@ def camera_stream_worker(generation):
             output_frame = frame
 
             if model is not None:
-                result = model(frame, verbose=False, conf=YOLO_CONFIDENCE_THRESHOLD)[0]
+                try:
+                    result = model(frame, verbose=False, conf=YOLO_CONFIDENCE_THRESHOLD)[0]
 
-                if result.masks is not None and result.boxes is not None:
-                    masks_array = result.masks.data.cpu().numpy()
-                    classes = result.boxes.cls.cpu().numpy().astype(int)
+                    if result.masks is not None and result.boxes is not None:
+                        masks_array = result.masks.data.cpu().numpy()
+                        classes = result.boxes.cls.cpu().numpy().astype(int)
 
-                    # Class 0 = browned / affected Azolla, class 1 = healthy Azolla
-                    brown_pct = compute_coverage(masks_array, classes, 0, height, width, total_pixels)
-                    green_pct = compute_coverage(masks_array, classes, 1, height, width, total_pixels)
+                        # Class 0 = browned / affected Azolla, class 1 = healthy Azolla
+                        brown_pct = compute_coverage(masks_array, classes, 0, height, width, total_pixels)
+                        green_pct = compute_coverage(masks_array, classes, 1, height, width, total_pixels)
 
-                if ai_enabled:
-                    output_frame = result.plot(conf=False, labels=False, boxes=False, masks=True)
+                    if ai_enabled:
+                        output_frame = result.plot(conf=False, labels=False, boxes=False, masks=True)
+                except Exception as exc:
+                    disable_model_after_error(exc)
+                    model = None
 
             # Broadcast telemetry at a fixed cadence while streaming
-            now = time.time()
+            now = time.monotonic()
             if now - last_telemetry >= STREAM_TELEMETRY_INTERVAL:
                 last_telemetry = now
                 with state_lock:
@@ -1371,7 +1418,7 @@ def camera_stream_worker(generation):
                 stream_frame_sequence += 1
                 stream_condition.notify_all()
 
-            elapsed = time.time() - frame_start
+            elapsed = time.monotonic() - frame_start
             if elapsed < frame_period:
                 time.sleep(frame_period - elapsed)
     finally:
@@ -1419,7 +1466,7 @@ def generate_camera_stream(token_hash):
 
 
 def sensor_thread():
-    """Broadcast the current telemetry to every client twice per second."""
+    """Evaluate alert transitions and broadcast telemetry every two seconds."""
     while True:
         time.sleep(2)
         with state_lock:
@@ -1447,7 +1494,9 @@ def telemetry_log_thread():
 
 @socketio.on("toggle_ai_vision")
 def handle_toggle_vision(data):
-    enabled = bool((data or {}).get("enabled", True))
+    if not isinstance(data, dict) or not isinstance(data.get("enabled"), bool):
+        return {"success": False, "error": "Vision setting must be true or false."}
+    enabled = data["enabled"]
     with state_lock:
         state["ai_vision_enabled"] = enabled
     print(f"[AI VISION] Overlay set to: {'ON' if enabled else 'OFF'}")
@@ -1465,11 +1514,14 @@ def send_initial_device_state():
 def handle_set_actuator(data):
     """Request a manual output state or switch canopy control mode."""
     global ph_exchange_stage
-    data = data or {}
+    if not isinstance(data, dict):
+        return {"success": False, "error": "Expected an actuator command."}
     name = data.get("name")
     if name not in ("motor", "solenoid", "pump", "ph_auto", "canopy_auto"):
         return {"success": False, "error": "Unknown actuator"}
-    enabled = bool(data.get("enabled"))
+    if not isinstance(data.get("enabled"), bool):
+        return {"success": False, "error": "Actuator state must be true or false."}
+    enabled = data["enabled"]
     command = {name: enabled}
     preference_key = {"pump": "pump_manual"}.get(name, name)
     if preference_key in device_preferences:
@@ -1573,6 +1625,11 @@ def no_store(response):
     return response
 
 
+def request_json_object():
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else None
+
+
 @app.route("/api/auth/status")
 def auth_status():
     with AUTH_DB_LOCK, auth_db() as connection:
@@ -1582,9 +1639,13 @@ def auth_status():
 
 @app.route("/api/auth/setup", methods=["POST"])
 def auth_setup():
-    data = request.get_json(silent=True) or {}
-    username, password = str(data.get("username", "")).strip(), data.get("password", "")
-    if not isinstance(password, str) or not 3 <= len(username) <= 40 or not username.replace("_", "").replace("-", "").isalnum() or len(password) < 10 or len(password) > 256:
+    data = request_json_object()
+    if data is None:
+        return jsonify({"error": "Expected a username and password."}), 400
+    username, password = data.get("username", ""), data.get("password", "")
+    if isinstance(username, str):
+        username = username.strip()
+    if not isinstance(username, str) or not isinstance(password, str) or not 3 <= len(username) <= 40 or not username.replace("_", "").replace("-", "").isalnum() or len(password) < 10 or len(password) > 256:
         return jsonify({"error": "Use a 3–40 character username and a password of at least 10 characters."}), 400
     salt = secrets.token_bytes(16)
     with AUTH_DB_LOCK, auth_db() as connection:
@@ -1603,8 +1664,14 @@ def auth_setup():
 
 @app.route("/api/auth/login", methods=["POST"])
 def auth_login():
-    data = request.get_json(silent=True) or {}
-    username, password = str(data.get("username", "")).strip(), data.get("password", "")
+    data = request_json_object()
+    if data is None:
+        return jsonify({"error": "Expected a username and password."}), 400
+    username, password = data.get("username", ""), data.get("password", "")
+    if isinstance(username, str):
+        username = username.strip()
+    if not isinstance(username, str):
+        username = ""
     ip = request.remote_addr or "unknown"
     now = time.time()
     with AUTH_DB_LOCK, auth_db() as connection:
@@ -1658,9 +1725,13 @@ def auth_list_users():
 def auth_add_user():
     if not is_system_admin():
         return jsonify({"error": "System administrator access required."}), 403
-    data = request.get_json(silent=True) or {}
-    username, password = str(data.get("username", "")).strip(), data.get("password", "")
-    if not isinstance(password, str) or not 3 <= len(username) <= 40 or not username.replace("_", "").replace("-", "").isalnum() or len(password) < 10 or len(password) > 256:
+    data = request_json_object()
+    if data is None:
+        return jsonify({"error": "Expected a username and password."}), 400
+    username, password = data.get("username", ""), data.get("password", "")
+    if isinstance(username, str):
+        username = username.strip()
+    if not isinstance(username, str) or not isinstance(password, str) or not 3 <= len(username) <= 40 or not username.replace("_", "").replace("-", "").isalnum() or len(password) < 10 or len(password) > 256:
         return jsonify({"error": "Use a 3–40 character username and a password of at least 10 characters."}), 400
     salt = secrets.token_bytes(16)
     try:
@@ -1724,13 +1795,6 @@ def video_feed():
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
-
-
-@app.route("/stop_stream", methods=["POST"])
-def stop_stream():
-    # Viewer disconnects release their own stream subscription. A browser must
-    # not be able to stop the shared camera feed for everyone else.
-    return jsonify({"success": True, "streaming": state["stream_active"]})
 
 
 @app.route("/health")
@@ -1846,6 +1910,9 @@ def api_local_state():
         result = {
             "telemetry": dict(state["telemetry"]),
             "actuators": dict(state["actuators"]),
+            "ai_vision_enabled": state["ai_vision_enabled"],
+            "streaming": state["stream_active"],
+            "capture_in_progress": state["capture_in_progress"],
             "settings": dict(sensor_settings),
             "camera_cover": {
                 "requested_open": state["camera_cover_requested_open"],
@@ -1886,7 +1953,9 @@ def api_push_status():
 @app.route("/api/push/subscription", methods=["POST", "DELETE"])
 def api_push_subscription():
     if request.method == "DELETE":
-        data = request.get_json(silent=True) or {}
+        data = request_json_object()
+        if data is None:
+            return jsonify({"error": "Expected a subscription endpoint."}), 400
         endpoint = data.get("endpoint")
         if not isinstance(endpoint, str) or len(endpoint) > 4096:
             return jsonify({"error": "A valid subscription endpoint is required."}), 400
@@ -1896,7 +1965,7 @@ def api_push_subscription():
 
     if not (webpush and VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY and VAPID_SUBJECT):
         return jsonify({"error": "Browser push is not configured on this server."}), 503
-    subscription = request.get_json(silent=True)
+    subscription = request_json_object()
     if not isinstance(subscription, dict):
         return jsonify({"error": "A valid browser subscription is required."}), 400
     endpoint = subscription.get("endpoint")
@@ -1912,8 +1981,10 @@ def api_push_subscription():
 
 @app.route("/api/vision", methods=["POST"])
 def api_set_vision():
-    data = request.get_json(silent=True) or {}
-    enabled = bool(data.get("enabled", True))
+    data = request_json_object()
+    if data is None or not isinstance(data.get("enabled"), bool):
+        return jsonify({"error": "Vision setting must be true or false."}), 400
+    enabled = data["enabled"]
     with state_lock:
         state["ai_vision_enabled"] = enabled
     return jsonify({"success": True, "enabled": enabled})
@@ -1921,14 +1992,16 @@ def api_set_vision():
 
 @app.route("/api/actuator", methods=["POST"])
 def api_set_actuator():
-    data = request.get_json(silent=True) or {}
+    data = request_json_object()
     reply = handle_set_actuator(data)
     return jsonify(reply), (200 if reply.get("success") else 400)
 
 
 @app.route("/api/devices/reboot", methods=["POST"])
 def api_reboot_device():
-    data = request.get_json(silent=True) or {}
+    data = request_json_object()
+    if data is None:
+        return jsonify({"success": False, "error": "Expected a reboot target."}), 400
     target = data.get("target")
     if target == "esp32":
         if not send_device_command({"type": "reboot"}):

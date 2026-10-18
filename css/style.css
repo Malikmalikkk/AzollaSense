@@ -1333,24 +1333,6 @@ input:checked+.slider-knob::before {
   transform: translateX(20px);
 }
 
-/* Green Check Badge */
-.green-check-badge {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: #3b8b54;
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.green-check-badge svg {
-  width: 14px;
-  height: 14px;
-  stroke-width: 3;
-}
-
 .chevron-arrow {
   color: var(--text-muted);
 }

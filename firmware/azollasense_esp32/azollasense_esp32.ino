@@ -39,6 +39,7 @@ constexpr bool RELAY_ACTIVE_LOW = true;
 constexpr uint32_t MOTOR_TRAVEL_MS = 8000;  // tune for full canopy travel; add limit switches
 constexpr uint32_t TELEMETRY_INTERVAL_MS = 2000;
 constexpr uint32_t PI_COMMAND_TIMEOUT_MS = 6000;
+constexpr uint32_t WATER_TEMP_CONVERSION_MS = 750; // DS18B20 at its default 12-bit resolution
 // Tune these angles and travel time for the installed cover and servo.
 constexpr int CAMERA_COVER_CLOSED_ANGLE = 10;
 constexpr int CAMERA_COVER_OPEN_ANGLE = 100;
@@ -67,6 +68,9 @@ uint32_t motorStartedAt = 0;
 uint32_t cameraCoverMoveStartedAt = 0;
 uint32_t lastTelemetryAt = 0;
 uint32_t lastPiCommandAt = 0;
+uint32_t waterTempConversionStartedAt = 0;
+bool waterTempConversionPending = false;
+float latestWaterTemperature = NAN;
 String inputLine;
 
 void setRelay(int pin, bool on) {
@@ -152,8 +156,28 @@ int readRainSensorRaw() {
   return static_cast<int>((sum + 8) / 16);
 }
 
+float readWaterTemperature(uint32_t now) {
+  if (!waterTempConversionPending) {
+    waterTemp.requestTemperatures();
+    waterTempConversionStartedAt = now;
+    waterTempConversionPending = true;
+    return latestWaterTemperature;
+  }
+
+  if (now - waterTempConversionStartedAt < WATER_TEMP_CONVERSION_MS) {
+    return latestWaterTemperature;
+  }
+
+  const float temperature = waterTemp.getTempCByIndex(0);
+  latestWaterTemperature = (temperature == DEVICE_DISCONNECTED_C || temperature < -55.0f || temperature > 125.0f)
+      ? NAN : temperature;
+  waterTemp.requestTemperatures();
+  waterTempConversionStartedAt = now;
+  return latestWaterTemperature;
+}
+
 void sendTelemetry(float waterDistance, float temperature, float phVoltage, float lux, int rainSensorRaw) {
-  StaticJsonDocument<512> doc;
+  JsonDocument doc;
   doc["type"] = "telemetry";
   if (isfinite(waterDistance)) doc["water_distance_cm"] = waterDistance;
   if (isfinite(temperature)) doc["temperature"] = temperature;
@@ -175,7 +199,7 @@ void sendTelemetry(float waterDistance, float temperature, float phVoltage, floa
 }
 
 void processCommand(const String& line) {
-  StaticJsonDocument<768> doc;
+  JsonDocument doc;
   if (deserializeJson(doc, line)) return;
   if (doc["type"] == "reboot") {
     Serial.println("{\"type\":\"rebooting\"}");
@@ -191,19 +215,19 @@ void processCommand(const String& line) {
   if (!controllerReady && !restoringState) return;
   lastPiCommandAt = millis();
 
-  if (doc.containsKey("canopy_auto")) {
+  if (doc["canopy_auto"].is<bool>()) {
     canopyAuto = doc["canopy_auto"].as<bool>();
   }
-  if (doc.containsKey("motor")) {
+  if (doc["motor"].is<bool>()) {
     if (!restoringState) canopyAuto = false;
     moveCanopy(doc["motor"].as<bool>());
   }
-  if (doc.containsKey("auto_motor")) moveCanopy(doc["auto_motor"].as<bool>());
-  if (doc.containsKey("solenoid")) solenoidOn = doc["solenoid"].as<bool>();
-  if (doc.containsKey("camera_cover")) moveCameraCover(doc["camera_cover"].as<bool>());
-  if (doc.containsKey("pump")) pumpManualRequest = doc["pump"].as<bool>();
-  if (doc.containsKey("pump_auto")) pumpAutoEnabled = doc["pump_auto"].as<bool>();
-  if (doc.containsKey("pump_auto_running")) pumpAutoRunning = doc["pump_auto_running"].as<bool>();
+  if (doc["auto_motor"].is<bool>()) moveCanopy(doc["auto_motor"].as<bool>());
+  if (doc["solenoid"].is<bool>()) solenoidOn = doc["solenoid"].as<bool>();
+  if (doc["camera_cover"].is<bool>()) moveCameraCover(doc["camera_cover"].as<bool>());
+  if (doc["pump"].is<bool>()) pumpManualRequest = doc["pump"].as<bool>();
+  if (doc["pump_auto"].is<bool>()) pumpAutoEnabled = doc["pump_auto"].as<bool>();
+  if (doc["pump_auto_running"].is<bool>()) pumpAutoRunning = doc["pump_auto_running"].as<bool>();
 }
 
 void readSerialCommands() {
@@ -249,6 +273,7 @@ void setup() {
   analogReadResolution(12);
   Wire.begin();
   waterTemp.begin();
+  waterTemp.setWaitForConversion(false);
   if (!tsl.begin()) Serial.println("{\"type\":\"warning\",\"sensor\":\"tsl2591\"}");
   tsl.setGain(TSL2591_GAIN_MED);
   tsl.setTiming(TSL2591_INTEGRATIONTIME_200MS);
@@ -295,8 +320,7 @@ void loop() {
 
   const float distance = readWaterDistanceCm();
   const int rainSensorRaw = readRainSensorRaw();
-  waterTemp.requestTemperatures();
-  const float temperature = waterTemp.getTempCByIndex(0);
+  const float temperature = readWaterTemperature(now);
   const float phVoltage = readPhVoltage();
 
   pumpOutput = controllerReady && !solenoidOn && (pumpManualRequest || pumpAutoRunning);

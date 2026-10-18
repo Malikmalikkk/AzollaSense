@@ -3,8 +3,7 @@
  *
  * Dashboard telemetry, live camera stream control, AI vision toggle,
  * tab navigation, settings and modal dialogs.
- * All telemetry is server-driven: every value on screen originates from
- * the "telemetry_update" Socket.IO broadcast sent by app-server.py.
+ * Telemetry and actuator state are polled from the local Flask backend.
  */
 (() => {
   "use strict";
@@ -59,6 +58,12 @@
     }
   }
   loadLatestBrowningCapture();
+  window.setInterval(() => {
+    if (!document.hidden) loadLatestBrowningCapture();
+  }, 60000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) loadLatestBrowningCapture();
+  });
 
   const captureTrigger = byId("trigger-browning-capture");
   if (captureTrigger) {
@@ -80,13 +85,17 @@
     });
   }
 
-  // All live traffic stays on the Pi. Polling avoids a CDN-hosted Socket.IO
-  // client dependency and keeps controls available without internet access.
-  const localSocketHandlers = {};
-  const socket = {
-    on(event, callback) { localSocketHandlers[event] = callback; },
+  // Keep the dashboard independent of an external Socket.IO client or CDN.
+  const dashboardHandlers = {};
+  const dashboardEvents = {
+    on(event, callback) { dashboardHandlers[event] = callback; },
     emit(event, data, acknowledge) {
-      const endpoint = event === "set_actuator" ? "/api/actuator" : "/api/vision";
+      const endpoints = { set_actuator: "/api/actuator", toggle_ai_vision: "/api/vision" };
+      const endpoint = endpoints[event];
+      if (!endpoint) {
+        acknowledge?.({ success: false, error: "Unsupported dashboard command." });
+        return;
+      }
       fetch(backendUrl(endpoint), { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data || {}) })
         .then(async (response) => ({ response, result: await response.json() }))
         .then(({ response, result }) => acknowledge?.(response.ok ? result : { success: false, error: result.error }))
@@ -120,43 +129,6 @@
     .then((response) => response.ok ? response.json() : Promise.reject(new Error("Could not load sensor settings.")))
     .then(applySensorSettings)
     .catch((error) => console.warn(error.message));
-
-  const cloudSyncStatus = byId("cloud-sync-status");
-  const cloudSyncBadge = byId("cloud-sync-badge");
-  function isLocalHostname(hostname) {
-    const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
-    if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".lan") || host.endsWith(".internal") || host.endsWith(".home") || host.endsWith(".home.arpa") || host === "::1" || host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) return true;
-    if (host.includes(":")) return false;
-    const octets = host.split(".").map(Number);
-    if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return !host.includes(".");
-    return octets[0] === 10 || octets[0] === 127 || octets[0] === 0 ||
-      (octets[0] === 169 && octets[1] === 254) ||
-      (octets[0] === 192 && octets[1] === 168) ||
-      (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
-      (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127);
-  }
-
-  async function refreshCloudSyncStatus() {
-    if (!cloudSyncStatus) return;
-    const publicHost = !isLocalHostname(window.location.hostname);
-    let connected = false;
-    if (publicHost && navigator.onLine) {
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 5000);
-      try {
-        const response = await fetch(backendUrl("/health"), { cache: "no-store", signal: controller.signal });
-        connected = response.ok;
-      } catch (_) { connected = false; }
-      finally { window.clearTimeout(timeout); }
-    }
-    cloudSyncStatus.textContent = connected ? "Connected" : "Disconnected";
-    cloudSyncStatus.title = connected ? "The app is being served from an online host." : "The app is available locally only, or the online service is unreachable.";
-    if (cloudSyncBadge) cloudSyncBadge.classList.toggle("is-hidden", !connected);
-  }
-  refreshCloudSyncStatus();
-  window.addEventListener("online", refreshCloudSyncStatus);
-  window.addEventListener("offline", refreshCloudSyncStatus);
-  window.setInterval(refreshCloudSyncStatus, 30000);
 
   /* ------------------------------------------------------------------ */
   /* Toast notifications                                                */
@@ -205,6 +177,7 @@
   const stopBtn = byId("stop-stream-btn");
   const liveBadge = byId("feed-live-badge");
   const cvToggleBtn = byId("toggle-cv-overlay");
+  let streamStartedAt = 0;
 
   function setStreamUI(running) {
     streamRunning = running;
@@ -215,9 +188,9 @@
   }
 
   let lastSessionActivitySent = 0;
-  function sendSessionActivity(force = false) {
+  function sendSessionActivity() {
     const now = Date.now();
-    if (!force && now - lastSessionActivitySent < 60000) return;
+    if (now - lastSessionActivitySent < 60000) return;
     lastSessionActivitySent = now;
     fetch(backendUrl("/api/auth/activity"), { method: "POST", credentials: "same-origin", cache: "no-store" })
       .then((response) => {
@@ -230,14 +203,19 @@
     document.addEventListener(eventName, () => sendSessionActivity(), { passive: true });
   });
   function resetVisionToggle() {
-    aiVisionOn = true;
-    if (!cvToggleBtn) return;
-    cvToggleBtn.textContent = "AI Vision: ON";
-    cvToggleBtn.classList.add("vision-on");
-    cvToggleBtn.setAttribute("aria-pressed", "true");
+    if (!aiVisionOn) dashboardEvents.emit("toggle_ai_vision", { enabled: true });
+    setVisionUI(true);
   }
 
-  function stopCameraStream(notify = true) {
+  function setVisionUI(enabled) {
+    aiVisionOn = enabled;
+    if (!cvToggleBtn) return;
+    cvToggleBtn.textContent = `AI Vision: ${enabled ? "ON" : "OFF"}`;
+    cvToggleBtn.classList.toggle("vision-on", enabled);
+    cvToggleBtn.setAttribute("aria-pressed", String(enabled));
+  }
+
+  function stopCameraStream() {
     if (!streamRunning) return;
 
     if (liveFeed) liveFeed.removeAttribute("src");
@@ -245,12 +223,13 @@
     resetVisionToggle();
     setStreamUI(false);
 
-    if (notify) showToast("Camera stream stopped.");
+    showToast("Camera stream stopped.");
   }
 
   if (startBtn && liveFeed) {
     startBtn.addEventListener("click", () => {
       // Cache-bust so the browser always opens a fresh MJPEG session
+      streamStartedAt = Date.now();
       liveFeed.src = backendUrl(`/video_feed?stream=${Date.now()}`);
       setStreamUI(true);
       showToast("Connecting to farm camera…");
@@ -260,6 +239,7 @@
   if (liveFeed) {
     liveFeed.addEventListener("error", () => {
       if (!streamRunning) return;
+      resetVisionToggle();
       setStreamUI(false);
       showToast("⚠ Could not reach the camera stream.");
     });
@@ -281,13 +261,9 @@
 
   if (cvToggleBtn) {
     cvToggleBtn.addEventListener("click", () => {
-      aiVisionOn = !aiVisionOn;
-
-      socket.emit("toggle_ai_vision", { enabled: aiVisionOn });
-
-      cvToggleBtn.textContent = aiVisionOn ? "AI Vision: ON" : "AI Vision: OFF";
-      cvToggleBtn.classList.toggle("vision-on", aiVisionOn);
-      cvToggleBtn.setAttribute("aria-pressed", String(aiVisionOn));
+      const enabled = !aiVisionOn;
+      dashboardEvents.emit("toggle_ai_vision", { enabled });
+      setVisionUI(enabled);
     });
   }
 
@@ -348,28 +324,17 @@
 
 
   /* ------------------------------------------------------------------ */
-  /* Socket.IO — connection state & live telemetry                      */
+  /* Backend connection state & live telemetry                           */
   /* ------------------------------------------------------------------ */
 
-  socket.on("connect", () => {
-    console.log("Socket.IO connected:", socket.id);
-    showToast("✓ Connected to live AzollaSense stream");
+  dashboardEvents.on("connect", () => {
+    showToast("Connected to the AzollaSense server.");
     loadLatestBrowningCapture();
   });
 
-  socket.on("disconnect", () => {
-    console.warn("Socket.IO disconnected");
-    showToast("⚠ Connection to farm unit lost");
+  dashboardEvents.on("disconnect", () => {
+    showToast("Connection to the AzollaSense server was lost.");
   });
-
-  socket.on("stream_preempted", () => {
-    if (liveFeed) liveFeed.removeAttribute("src");
-    resetVisionToggle();
-    setStreamUI(false);
-    showToast("Live stream stopped so the camera can capture an image.");
-  });
-
-  socket.on("browning_capture_updated", loadLatestBrowningCapture);
 
   let alertCursor = 0;
   const alertListenStartedAt = Date.now() / 1000;
@@ -454,73 +419,72 @@
     qsa(".rain-sensor-status").forEach((el) => { el.style.color = statusColor; });
   }
 
-  socket.on("telemetry_update", (data) => {
+  dashboardEvents.on("telemetry_update", (data) => {
     const setValues = (selector, text) => qsa(selector).forEach((el) => { el.textContent = text; });
 
-    if (data.sensor_updated_at) {
-      const updatedAt = new Date(data.sensor_updated_at);
-      if (!Number.isNaN(updatedAt.getTime())) {
+    if (data.sensor_updated_at !== undefined) {
+      const updatedAt = data.sensor_updated_at ? new Date(data.sensor_updated_at) : null;
+      if (updatedAt && !Number.isNaN(updatedAt.getTime())) {
         const formatted = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" }).format(updatedAt);
         qsa(".last-sensor-update").forEach((el) => {
           el.textContent = formatted;
           el.dateTime = updatedAt.toISOString();
         });
+      } else {
+        qsa(".last-sensor-update").forEach((el) => {
+          el.textContent = "Waiting for sensor data";
+          el.removeAttribute("datetime");
+        });
       }
     }
 
-    if (data.water_level !== undefined) setValues(".val-water", `${data.water_level} cm`);
-    if (data.temperature !== undefined) setValues(".val-temp", `${data.temperature}°C`);
-    if (data.ph !== undefined) setValues(".val-ph", `${data.ph}`);
-    if (data.ph_voltage !== undefined && data.ph_voltage !== null) {
-      setValues(".val-ph-voltage", `${Number(data.ph_voltage).toFixed(3)} V`);
+    if (data.water_level !== undefined) setValues(".val-water", data.water_level == null ? "— cm" : `${Number(data.water_level).toFixed(1)} cm`);
+    if (data.temperature !== undefined) setValues(".val-temp", data.temperature == null ? "—°C" : `${Number(data.temperature).toFixed(1)}°C`);
+    if (data.ph !== undefined) setValues(".val-ph", data.ph == null ? "—" : Number(data.ph).toFixed(2));
+    if (data.ph_voltage !== undefined) {
+      setValues(".val-ph-voltage", data.ph_voltage == null ? "— V" : `${Number(data.ph_voltage).toFixed(3)} V`);
     }
     updateRainSensorDisplay(data);
-    if (data.lux !== undefined && data.lux !== null && Number.isFinite(Number(data.lux))) {
-      const lux = Math.max(0, Number(data.lux));
-      setValues(".val-lux", `${Math.round(lux).toLocaleString()} lx`);
+    if (data.lux !== undefined) {
       const meter = qs(".light-meter-track");
       const meterFill = qs(".light-meter-fill");
       const lightStatus = qs(".light-intensity-status");
-      if (meter) meter.setAttribute("aria-valuenow", String(Math.min(Math.round(lux), 60000)));
-      if (meterFill) meterFill.style.width = `${Math.min(lux / 60000 * 100, 100)}%`;
-      if (lightStatus) {
-        lightStatus.textContent = lux >= (sensorSettings.canopy_deploy_lux ?? 45000)
-          ? "Canopy deploy threshold reached"
-          : "Below canopy deploy threshold";
+      const lux = Number(data.lux);
+      if (data.lux == null || !Number.isFinite(lux)) {
+        setValues(".val-lux", "— lx");
+        if (meter) meter.setAttribute("aria-valuenow", "0");
+        if (meterFill) meterFill.style.width = "0%";
+        if (lightStatus) lightStatus.textContent = "Waiting for sensor data";
+      } else {
+        const safeLux = Math.max(0, lux);
+        setValues(".val-lux", `${Math.round(safeLux).toLocaleString()} lx`);
+        if (meter) meter.setAttribute("aria-valuenow", String(Math.min(Math.round(safeLux), 60000)));
+        if (meterFill) meterFill.style.width = `${Math.min(safeLux / 60000 * 100, 100)}%`;
+        if (lightStatus) {
+          lightStatus.textContent = safeLux >= (sensorSettings.canopy_deploy_lux ?? 45000)
+            ? "Canopy deploy threshold reached"
+            : "Below canopy deploy threshold";
+        }
       }
     }
-    if (data.total_cov !== undefined) setValues(".val-cov", `${data.total_cov}%`);
-
-    qsa(".val-browning-sectors").forEach((el) => {
-      const brownPct = Number(data.brown_cov) || 0;
-      if (brownPct >= (sensorSettings.browning_alert_pct ?? 10)) {
-        el.textContent = `Browning Detected: ${brownPct}%`;
-        el.style.color = "#e65100";
-      } else {
-        el.textContent = `Healthy (${brownPct}% browning)`;
-        el.style.color = "#2e7d32";
-      }
-    });
+    if (data.total_cov !== undefined) setValues(".val-cov", data.total_cov == null ? "—" : `${Number(data.total_cov).toFixed(2)}%`);
 
     const badgeText = qs(".system-status-badge span");
     if (badgeText) {
-      const temp = Number(data.temperature) || 0;
-      const ph = Number(data.ph) || 7;
-      const brownPct = Number(data.brown_cov) || 0;
-      badgeText.textContent =
-        temp > (sensorSettings.temperature_max_c ?? 34) ||
-        ph < (sensorSettings.ph_min ?? 6.5) || ph > (sensorSettings.ph_max ?? 7.5) ||
-        brownPct >= (sensorSettings.browning_alert_pct ?? 10) ||
-        (data.water_level !== undefined && (data.water_level < (sensorSettings.water_min_cm ?? 20) || data.water_level > (sensorSettings.water_max_cm ?? 30)))
-          ? "System Alert: Action Required"
-          : "System Status";
+      const temp = Number(data.temperature);
+      const ph = Number(data.ph);
+      const brownPct = Number(data.brown_cov);
+      const water = Number(data.water_level);
+      const hasAlert =
+        (data.temperature != null && temp > (sensorSettings.temperature_max_c ?? 34)) ||
+        (data.ph != null && (ph < (sensorSettings.ph_min ?? 6.5) || ph > (sensorSettings.ph_max ?? 7.5))) ||
+        (data.brown_cov != null && brownPct >= (sensorSettings.browning_alert_pct ?? 10)) ||
+        (data.water_level != null && (water < (sensorSettings.water_min_cm ?? 20) || water > (sensorSettings.water_max_cm ?? 30)));
+      const hasReading = [data.temperature, data.ph, data.brown_cov, data.water_level].some((value) => value != null);
+      badgeText.textContent = hasAlert ? "System Alert: Action Required" : hasReading ? "System Status" : "Waiting for sensor data";
     }
 
   });
-
-  socket.on("rain_sensor_update", updateRainSensorDisplay);
-
-  socket.on("system_alert", displaySystemAlert);
 
   const actuatorInputs = {
     motor: byId("motor-switch"),
@@ -541,7 +505,7 @@
     if (!input) return;
     input.addEventListener("change", () => {
       setSwitchPending(input, true);
-      socket.emit("set_actuator", { name, enabled: input.checked }, (reply) => {
+      dashboardEvents.emit("set_actuator", { name, enabled: input.checked }, (reply) => {
         setSwitchPending(input, false);
         if (!reply || !reply.success) {
           input.checked = !input.checked;
@@ -551,7 +515,7 @@
     });
   });
 
-  socket.on("actuator_update", (data) => {
+  dashboardEvents.on("actuator_update", (data) => {
     Object.entries(actuatorInputs).forEach(([name, input]) => {
       const stateKey = name === "pump" ? "pump_manual" : name;
       if (input && data[stateKey] !== undefined) input.checked = Boolean(data[stateKey]);
@@ -563,15 +527,21 @@
     }
   });
 
-  socket.on("sensor_settings", applySensorSettings);
+  dashboardEvents.on("sensor_settings", applySensorSettings);
 
+  let localStateConnected = false;
+  let stopStatePolling = false;
   async function refreshLocalState() {
     try {
       const query = alertCursor === 0
         ? "?alerts_recent=100"
         : `?alerts_after=${encodeURIComponent(alertCursor)}&alerts_since=${encodeURIComponent(alertListenStartedAt)}`;
       const response = await fetch(backendUrl(`/api/state${query}`), { cache: "no-store", credentials: "same-origin" });
-      if (response.status === 401) { location.replace("/login"); return; }
+      if (response.status === 401) {
+        stopStatePolling = true;
+        location.replace("/login");
+        return;
+      }
       if (!response.ok) throw new Error("Local server unavailable");
       const data = await response.json();
       (data.alerts || []).forEach((alert) => {
@@ -579,22 +549,32 @@
         else displaySystemAlert(alert);
       });
       alertCursor = data.alert_cursor ?? alertCursor;
-      localSocketHandlers.telemetry_update?.(data.telemetry);
-      localSocketHandlers.actuator_update?.(data.actuators);
-      localSocketHandlers.sensor_settings?.(data.settings);
-      if (!localSocketHandlers.connected) {
-        localSocketHandlers.connected = true;
-        localSocketHandlers.connect?.();
+      dashboardHandlers.telemetry_update?.(data.telemetry);
+      dashboardHandlers.actuator_update?.(data.actuators);
+      dashboardHandlers.sensor_settings?.(data.settings);
+      if (typeof data.ai_vision_enabled === "boolean") setVisionUI(data.ai_vision_enabled);
+      if (streamRunning && data.streaming === false && Date.now() - streamStartedAt > 5000) {
+        liveFeed?.removeAttribute("src");
+        resetVisionToggle();
+        setStreamUI(false);
+        showToast(data.capture_in_progress
+          ? "Live stream stopped so the camera can capture an image."
+          : "The camera stream ended.");
+      }
+      if (!localStateConnected) {
+        localStateConnected = true;
+        dashboardHandlers.connect?.();
       }
     } catch (_) {
-      if (localSocketHandlers.connected) {
-        localSocketHandlers.connected = false;
-        localSocketHandlers.disconnect?.();
+      if (localStateConnected) {
+        localStateConnected = false;
+        dashboardHandlers.disconnect?.();
       }
+    } finally {
+      if (!stopStatePolling) window.setTimeout(refreshLocalState, 1500);
     }
   }
   refreshLocalState();
-  window.setInterval(refreshLocalState, 1500);
 
   const logoutButton = byId("logout-btn");
   fetch(backendUrl("/api/auth/status"), { cache: "no-store", credentials: "same-origin" })

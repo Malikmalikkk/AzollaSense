@@ -16,12 +16,11 @@
     <meta name="mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="preconnect" href="https://cdn.socket.io" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./css/style.css?v=39" />
+    <link rel="stylesheet" href="./css/style.css?v=40" />
   </head>
 
   <body>
@@ -247,7 +246,7 @@
                 </div>
                 <div class="sensor-info">
                   <span class="sensor-label">Water Level</span>
-                  <span class="sensor-value val-water">26 cm</span>
+                <span class="sensor-value val-water">— cm</span>
                 </div>
               </div>
 
@@ -286,7 +285,7 @@
                 </div>
                 <div class="sensor-info">
                   <span class="sensor-label">Temperature</span>
-                  <span class="sensor-value val-temp">36°C</span>
+                <span class="sensor-value val-temp">—°C</span>
                 </div>
               </div>
 
@@ -327,7 +326,7 @@
                 </div>
                 <div class="sensor-info">
                   <span class="sensor-label">pH Level</span>
-                  <span class="sensor-value val-ph">7.2</span>
+                <span class="sensor-value val-ph">—</span>
                 </div>
               </div>
 
@@ -371,7 +370,7 @@
                 </div>
                 <div class="sensor-info">
                   <span class="sensor-label">Pond Coverage</span>
-                  <span class="sensor-value val-cov">75%</span>
+                <span class="sensor-value val-cov">—</span>
                 </div>
               </div>
             </div>
@@ -570,7 +569,7 @@
                     d="M17 8C8 10 5.9 16.17 3.82 21.34L5.71 22c5-3 12-5 14-12-1 2-5 3-9 3 0-1 4-4 6-5z"
                   />
                 </svg>
-                <span>System Status</span>
+                <span>Waiting for sensor data</span>
                 <svg
                   class="status-badge-leaf"
                   viewBox="0 0 24 24"
@@ -639,7 +638,7 @@
                 </div>
                 <div class="sensor-info">
                   <span class="sensor-label">Water Level</span>
-                  <span class="sensor-value val-water">26 cm</span>
+                <span class="sensor-value val-water">— cm</span>
                 </div>
               </div>
 
@@ -660,7 +659,7 @@
                 </div>
                 <div class="sensor-info">
                   <span class="sensor-label">Temperature</span>
-                  <span class="sensor-value val-temp">36°C</span>
+                <span class="sensor-value val-temp">—°C</span>
                 </div>
               </div>
 
@@ -699,7 +698,7 @@
                 </div>
                 <div class="sensor-info">
                   <span class="sensor-label">pH Level</span>
-                  <span class="sensor-value val-ph">7.2</span>
+                <span class="sensor-value val-ph">—</span>
                 </div>
               </div>
 
@@ -731,7 +730,7 @@
                 </div>
                 <div class="sensor-info">
                   <span class="sensor-label">Pond Coverage</span>
-                  <span class="sensor-value val-cov">75%</span>
+                <span class="sensor-value val-cov">—</span>
                 </div>
               </div>
             </div>
@@ -838,47 +837,6 @@
                         <input id="setting-notif-toggle" type="checkbox" />
                         <span class="slider-knob"></span>
                       </label>
-                    </div>
-                  </div>
-
-                  <!-- Cloud Sync -->
-                  <div class="setting-row-card">
-                    <div class="setting-left-side">
-                      <div class="setting-icon-container">
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        >
-                          <path
-                            d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"
-                          ></path>
-                        </svg>
-                      </div>
-                      <span class="setting-label">Cloud Sync</span>
-                    </div>
-                    <div class="setting-right-side">
-                      <span id="cloud-sync-status" class="setting-status-text"
-                        >Checking</span
-                      >
-                      <div
-                        id="cloud-sync-badge"
-                        class="green-check-badge is-hidden"
-                      >
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="3"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        >
-                          <polyline points="20 6 9 17 4 12"></polyline>
-                        </svg>
-                      </div>
                     </div>
                   </div>
 
@@ -1487,7 +1445,7 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- Application Scripts -->
-    <script src="./js/app.js?v=41" defer></script>
+    <script src="./js/app.js?v=42" defer></script>
     <script>
       // Register Service Worker for PWA
       if ("serviceWorker" in navigator) {

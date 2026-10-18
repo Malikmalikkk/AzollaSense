@@ -5,16 +5,15 @@
  * with an offline fallback to the app shell.
  */
 
-const CACHE_NAME = "azollasense-v27";
+const CACHE_NAME = "azollasense-v28";
 const APP_BASE = new URL("./", self.registration.scope);
 const appPath = (path) => new URL(path.replace(/^\//, ""), APP_BASE).href;
 
 const CORE_ASSETS = [
-  "./",
   "./index.html",
   "./login.html",
-  "./css/style.css?v=39",
-  "./js/app.js?v=41",
+  "./css/style.css?v=40",
+  "./js/app.js?v=42",
   "./js/auth.js?v=2",
   "./manifest.json",
   "./assets/logo.png",
@@ -23,36 +22,29 @@ const CORE_ASSETS = [
   "./assets/welcome_bg.png",
 ];
 
-// Never cache: live streams, socket polling and API calls
-const NETWORK_ONLY = ["/video_feed", "/socket.io/", "/api/"];
+// Always fetch live streams, server status, API responses, and saved captures.
+const NETWORK_ONLY = ["/video_feed", "/socket.io/", "/api/", "/health", "/assets/captures/"];
+const STATIC_DESTINATIONS = new Set(["font", "image", "manifest", "script", "style"]);
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    (async () => {
-      const cache = await caches.open(CACHE_NAME);
-      // Cache each asset individually so one missing file (e.g. an
-      // optional image) can never fail the whole installation.
-      await Promise.allSettled(
-        CORE_ASSETS.map((url) =>
-          cache.add(url).catch((err) => console.warn(`[SW] Cache failed: ${url}`, err))
-        )
-      );
-    })()
-  );
-  self.skipWaiting();
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    // Cache each asset separately so one missing optional asset cannot fail installation.
+    await Promise.allSettled(CORE_ASSETS.map((url) =>
+      cache.add(url).catch((err) => console.warn(`[SW] Cache failed: ${url}`, err))
+    ));
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then((cacheNames) =>
-      Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
-      )
-    )
-  );
-  self.clients.claim();
+  event.waitUntil((async () => {
+    const cacheNames = await caches.keys();
+    await Promise.all(cacheNames
+      .filter((name) => name.startsWith("azollasense-") && name !== CACHE_NAME)
+      .map((name) => caches.delete(name)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener("fetch", (event) => {
@@ -62,34 +54,45 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== location.origin) return;
-  if (NETWORK_ONLY.some((path) => url.href.startsWith(appPath(path)))) return;
+  const relativePath = url.pathname.startsWith(APP_BASE.pathname)
+    ? url.pathname.slice(APP_BASE.pathname.length - 1)
+    : url.pathname;
+  if (NETWORK_ONLY.some((path) => relativePath === path || relativePath.startsWith(path))) return;
 
   // Navigation requests: network first, fall back to the cached app shell
   if (request.mode === "navigate") {
-    event.respondWith(fetch(request).catch(() => caches.match(appPath("login.html"))));
+    event.respondWith((async () => {
+      try {
+        return await fetch(request);
+      } catch (_) {
+        const cache = await caches.open(CACHE_NAME);
+        return await cache.match(appPath("login.html")) || Response.error();
+      }
+    })());
     return;
   }
+  if (!STATIC_DESTINATIONS.has(request.destination)) return;
 
-  // Everything else: cache first, then network + dynamic caching
-  event.respondWith(
-    caches.match(request).then(
-      (cached) =>
-        cached ||
-        fetch(request)
-          .then((response) => {
-            if (response && response.status === 200 && response.type === "basic") {
-              const clone = response.clone();
-              caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-            }
-            return response;
-          })
-          .catch(() => {
-            if (request.destination === "image") {
-              return caches.match(appPath("assets/logo.png"));
-            }
-          })
-    )
-  );
+  // Static resources use the current cache first, then refresh from the network.
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(request);
+    if (cached) return cached;
+
+    try {
+      const response = await fetch(request);
+      if (response.status === 200 && response.type === "basic") {
+        await cache.put(request, response.clone());
+      }
+      return response;
+    } catch (error) {
+      if (request.destination === "image") {
+        const fallback = await cache.match(appPath("assets/logo.png"));
+        if (fallback) return fallback;
+      }
+      throw error;
+    }
+  })());
 });
 
 self.addEventListener("push", (event) => {
