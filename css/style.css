@@ -2421,3 +2421,72 @@ button:disabled { cursor: not-allowed; }
   .capture-details { grid-template-columns: 1fr; }
   .brand-text { font-size: 21px; }
 }
+
+/* Shared type and spacing scale for settings, status and dashboard panels. */
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --font-xs: 12px;
+  --font-sm: 13px;
+  --font-md: 15px;
+  --font-lg: 18px;
+}
+
+body { font-size: var(--font-md); }
+.section-title-text, .settings-group-title, .logs-title-group { font-size: var(--font-lg); }
+.sensor-label, .setting-label, .setting-status-text, .setting-help-text,
+.sensor-update-meta, .capture-detail span, .log-secondary-text,
+.log-time-stamp { font-size: var(--font-xs); }
+.setting-label { font-weight: 650; }
+.setting-status-text { font-weight: 550; }
+.settings-group { margin-bottom: var(--space-6); }
+.settings-group-title { margin-bottom: var(--space-3); }
+.settings-card-list { border-radius: var(--radius-md); }
+.setting-row-card { min-height: 64px; padding: var(--space-3) var(--space-4); }
+.setting-left-side { gap: var(--space-3); }
+.setting-right-side { gap: var(--space-3); }
+.setting-icon-container { width: 38px; height: 38px; flex: 0 0 38px; }
+.config-input, .setting-select { min-height: 42px; font-size: var(--font-sm); }
+.config-input-pair { gap: var(--space-2); }
+.setting-help-text { padding: var(--space-2) var(--space-1); line-height: 1.55; }
+.section-title-row { margin-block: 28px var(--space-3); }
+.capture-details { gap: var(--space-3); }
+.logs-header-row { margin-block: 26px var(--space-3); }
+.log-item-card { padding: var(--space-3) var(--space-4); }
+
+/* Keep controls legible and show that a switch command is being applied. */
+.switch-control { width: 48px; height: 28px; flex: 0 0 48px; cursor: pointer; }
+.switch-control input { cursor: pointer; }
+.switch-control:has(input:disabled) { cursor: wait; }
+.switch-control input:disabled + .slider-knob { cursor: wait; opacity: .82; }
+.switch-control.is-pending .slider-knob::before {
+  width: 16px;
+  height: 16px;
+  left: 6px;
+  bottom: 6px;
+  border: 2px solid rgba(41, 88, 55, .32);
+  border-top-color: #28623b;
+  background: transparent;
+  box-shadow: none;
+  animation: switch-loading-spin .7s linear infinite;
+}
+.switch-control.is-pending input:checked + .slider-knob::before {
+  transform: translateX(20px);
+}
+@keyframes switch-loading-spin { to { rotate: 360deg; } }
+@media (prefers-reduced-motion: reduce) {
+  .switch-control.is-pending .slider-knob::before { animation-duration: 1.5s; }
+}
+
+@media (max-width: 560px) {
+  .setting-row-card { min-height: 60px; padding: 10px 12px; }
+  .setting-left-side { gap: 9px; }
+  .setting-label { font-size: 12px; }
+  .setting-status-text { font-size: 11px; }
+  .settings-group-title { font-size: 16px; }
+  .section-title-row { margin-top: 24px; }
+}

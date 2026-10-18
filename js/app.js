@@ -529,12 +529,20 @@
     ph_auto: byId("ph-auto-switch"),
     canopy_auto: byId("canopy-auto-switch")
   };
+  function setSwitchPending(input, pending) {
+    const control = input.closest(".switch-control");
+    if (control) {
+      control.classList.toggle("is-pending", pending);
+      control.setAttribute("aria-busy", String(pending));
+    }
+    input.disabled = pending;
+  }
   Object.entries(actuatorInputs).forEach(([name, input]) => {
     if (!input) return;
     input.addEventListener("change", () => {
-      input.disabled = true;
+      setSwitchPending(input, true);
       socket.emit("set_actuator", { name, enabled: input.checked }, (reply) => {
-        input.disabled = false;
+        setSwitchPending(input, false);
         if (!reply || !reply.success) {
           input.checked = !input.checked;
           showToast(reply?.error || "Could not send command to the ESP32.");
@@ -835,7 +843,7 @@
     });
     notifToggle.addEventListener("change", async () => {
       const enabling = notifToggle.checked;
-      notifToggle.disabled = true;
+      setSwitchPending(notifToggle, true);
       try {
         if (enabling) await enablePushNotifications();
         else await disablePushNotifications();
@@ -846,7 +854,7 @@
         notifToggle.checked = !enabling;
         notifStatusText.textContent = notifToggle.checked ? "Enabled" : "Disabled";
         showToast(error.message || "Could not update notification settings.");
-      } finally { notifToggle.disabled = false; }
+      } finally { setSwitchPending(notifToggle, false); }
     });
   }
 
