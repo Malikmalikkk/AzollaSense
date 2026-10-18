@@ -405,7 +405,7 @@
     recentAlertItems.set(id, item);
     recentNotifications.querySelector(".notifications-empty")?.remove();
     recentNotifications.prepend(item);
-    while (recentAlertItems.size > 10) {
+    while (recentAlertItems.size > 100) {
       const oldestId = recentAlertItems.keys().next().value;
       recentAlertItems.get(oldestId)?.remove();
       recentAlertItems.delete(oldestId);
@@ -560,7 +560,7 @@
   async function refreshLocalState() {
     try {
       const query = alertCursor === 0
-        ? "?alerts_recent=10"
+        ? "?alerts_recent=100"
         : `?alerts_after=${encodeURIComponent(alertCursor)}&alerts_since=${encodeURIComponent(alertListenStartedAt)}`;
       const response = await fetch(backendUrl(`/api/state${query}`), { cache: "no-store", credentials: "same-origin" });
       if (response.status === 401) { location.replace("/login"); return; }

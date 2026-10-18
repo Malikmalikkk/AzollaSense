@@ -77,6 +77,10 @@ LOG_CAMERA_FRESH_SECONDS = 10
 LOG_RETENTION_DAYS = 90
 PUSH_DB_PATH = os.path.join(app.instance_path, "push_subscriptions.sqlite3")
 PUSH_DB_LOCK = threading.RLock()
+ALERT_DB_PATH = os.path.join(app.instance_path, "alerts.sqlite3")
+ALERT_DB_LOCK = threading.RLock()
+ALERT_LOG_LIMIT = 100
+ALERT_REMINDER_SECONDS = 60 * 60
 VAPID_PUBLIC_KEY = os.environ.get("AZOLLASENSE_VAPID_PUBLIC_KEY", "").strip()
 VAPID_PRIVATE_KEY = os.environ.get("AZOLLASENSE_VAPID_PRIVATE_KEY", "").strip()
 VAPID_SUBJECT = os.environ.get("AZOLLASENSE_VAPID_SUBJECT", "").strip()
@@ -96,6 +100,47 @@ def init_push_db():
 init_push_db()
 if os.name != "nt":
     os.chmod(PUSH_DB_PATH, 0o600)
+
+
+def init_alert_db():
+    global system_alert_sequence
+    with ALERT_DB_LOCK, sqlite3.connect(ALERT_DB_PATH, timeout=10) as connection:
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("CREATE TABLE IF NOT EXISTS system_alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, body TEXT NOT NULL, severity TEXT NOT NULL, tag TEXT NOT NULL, created_at REAL NOT NULL)")
+        connection.execute("CREATE TABLE IF NOT EXISTS alert_reminders (alert_key TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL, severity TEXT NOT NULL, last_notified_at REAL NOT NULL)")
+        rows = connection.execute(
+            "SELECT id,title,body,severity,tag,created_at FROM system_alerts ORDER BY id DESC LIMIT ?",
+            (ALERT_LOG_LIMIT,),
+        ).fetchall()
+        sequence = connection.execute("SELECT COALESCE(MAX(id),0) FROM system_alerts").fetchone()[0]
+    with alert_state_lock:
+        system_alert_history.extend(
+            {"id": row[0], "title": row[1], "body": row[2], "severity": row[3], "tag": row[4], "created_at": row[5]}
+            for row in reversed(rows)
+        )
+        system_alert_sequence = sequence
+    if os.name != "nt":
+        os.chmod(ALERT_DB_PATH, 0o600)
+
+
+init_alert_db()
+
+
+def _maintain_alert_reminders(active_warnings):
+    now = time.time()
+    due = []
+    with ALERT_DB_LOCK, sqlite3.connect(ALERT_DB_PATH, timeout=10) as connection:
+        saved = {row[0]: row[1:] for row in connection.execute(
+            "SELECT alert_key,title,body,severity,last_notified_at FROM alert_reminders"
+        )}
+        for alert_key in saved.keys() - active_warnings.keys():
+            connection.execute("DELETE FROM alert_reminders WHERE alert_key=?", (alert_key,))
+        for alert_key, details in active_warnings.items():
+            prior = saved.get(alert_key)
+            if prior and now - prior[3] >= ALERT_REMINDER_SECONDS:
+                due.append((alert_key, *details))
+    for alert_key, title, body, severity in due:
+        _emit_system_alert(f"Still unresolved: {title}", body, severity, repeat_key=alert_key)
 
 
 def _send_web_push(payload):
@@ -118,13 +163,30 @@ def _send_web_push(payload):
             print(f"[PUSH] Delivery failed: {exc}")
 
 
-def _emit_system_alert(title, body, severity="warning"):
+def _emit_system_alert(title, body, severity="warning", repeat_key=None):
     global system_alert_sequence
-    payload = {"title": title, "body": body, "severity": severity,
-               "tag": f"azollasense-{int(time.time() * 1000)}", "created_at": time.time()}
+    created_at = time.time()
+    tag = f"azollasense-{int(created_at * 1000)}"
+    with ALERT_DB_LOCK, sqlite3.connect(ALERT_DB_PATH, timeout=10) as connection:
+        cursor = connection.execute(
+            "INSERT INTO system_alerts(title,body,severity,tag,created_at) VALUES (?,?,?,?,?)",
+            (title, body, severity, tag, created_at),
+        )
+        alert_id = cursor.lastrowid
+        connection.execute(
+            "DELETE FROM system_alerts WHERE id NOT IN (SELECT id FROM system_alerts ORDER BY id DESC LIMIT ?)",
+            (ALERT_LOG_LIMIT,),
+        )
+        if repeat_key:
+            connection.execute(
+                "INSERT INTO alert_reminders(alert_key,title,body,severity,last_notified_at) VALUES (?,?,?,?,?) "
+                "ON CONFLICT(alert_key) DO UPDATE SET title=excluded.title,body=excluded.body,severity=excluded.severity,last_notified_at=excluded.last_notified_at",
+                (repeat_key, title.removeprefix("Still unresolved: "), body, severity, created_at),
+            )
+    payload = {"id": alert_id, "title": title, "body": body, "severity": severity,
+               "tag": tag, "created_at": created_at}
     with alert_state_lock:
-        system_alert_sequence += 1
-        payload["id"] = system_alert_sequence
+        system_alert_sequence = alert_id
         system_alert_history.append(payload)
     socketio.emit("system_alert", payload)
     if webpush is not None and VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY and VAPID_SUBJECT:
@@ -138,8 +200,9 @@ def _evaluate_alert_transitions(telemetry, actuators, settings):
         observed_at = datetime.fromisoformat(telemetry.get("sensor_updated_at"))
         if observed_at.tzinfo is None:
             observed_at = observed_at.replace(tzinfo=PH_TIMEZONE)
+        fresh_window = max(LOG_SENSOR_FRESH_SECONDS, settings.get("update_interval_seconds", 2) * 2 + 5)
         fresh = (actuators.get("device_connected") is True and
-                 0 <= (datetime.now(PH_TIMEZONE) - observed_at.astimezone(PH_TIMEZONE)).total_seconds() <= LOG_SENSOR_FRESH_SECONDS)
+                 0 <= (datetime.now(PH_TIMEZONE) - observed_at.astimezone(PH_TIMEZONE)).total_seconds() <= fresh_window)
     except (TypeError, ValueError):
         fresh = False
     if not fresh:
@@ -171,6 +234,25 @@ def _evaluate_alert_transitions(telemetry, actuators, settings):
     pump_on = bool(actuators.get("pump_manual") or actuators.get("pump_auto_running") or actuators.get("pump"))
     current["pump"] = "on" if pump_on else "off"
     current["canopy"] = "deployed" if actuators.get("motor") else "retracted"
+
+    active_warnings = {}
+    if current.get("temperature") == "high":
+        active_warnings["temperature_high"] = ("High temperature warning", f"Water temperature is {temperature:g} °C, above the configured maximum of {settings['temperature_max_c']:g} °C.", "warning")
+    if current.get("ph") in ("low", "high"):
+        active_warnings[f"ph_{current['ph']}"] = ("Water pH warning", f"pH is {current['ph']}; reading {ph:g}, configured range {settings['ph_min']:g}–{settings['ph_max']:g}.", "warning")
+    if current.get("water") == "low":
+        active_warnings["water_low"] = ("Low water level", f"Water level is {water:g} cm, below the configured minimum of {settings['water_min_cm']:g} cm.", "warning")
+    elif current.get("water") == "high":
+        active_warnings["water_high"] = ("High water level", f"Water level is {water:g} cm, above the configured maximum of {settings['water_max_cm']:g} cm.", "warning")
+    if current.get("light") == "high":
+        active_warnings["light_high"] = ("High light intensity", f"Light is {lux:g} lx, at or above the canopy deploy threshold of {settings['canopy_deploy_lux']:g} lx.", "warning")
+    if current.get("browning") == "high":
+        active_warnings["browning_high"] = ("Azolla browning warning", f"Browning is {browning:g}%, at or above the configured alert threshold of {settings['browning_alert_pct']:g}%.", "warning")
+    if current.get("rain") == "wet":
+        direction = "at or below" if settings["rain_wet_below_threshold"] == 1 else "at or above"
+        reading_text = f"Reading {rain_reading:g} is " if rain_reading is not None else "The sensor reading is "
+        active_warnings["rain_wet"] = ("Rain detected", f"{reading_text}{direction} the configured wet threshold of {settings['rain_wet_threshold']:g}; canopy rain protection is active.", "warning")
+    _maintain_alert_reminders(active_warnings)
 
     with alert_state_lock:
         previous = previous_alert_states
@@ -222,8 +304,19 @@ def _evaluate_alert_transitions(telemetry, actuators, settings):
             events.append(("Canopy deployed", "Canopy is now open.", "info"))
         elif key == "canopy" and value == "retracted":
             events.append(("Canopy retracted", "Canopy is now closed.", "info"))
-    for event in events:
-        _emit_system_alert(*event)
+    warning_keys = {
+        "High temperature warning": "temperature_high",
+        "Low water level": "water_low",
+        "High water level": "water_high",
+        "High light intensity": "light_high",
+        "Azolla browning warning": "browning_high",
+        "Rain detected": "rain_wet",
+    }
+    for title, body, severity in events:
+        repeat_key = warning_keys.get(title)
+        if title == "Water pH warning":
+            repeat_key = f"ph_{current.get('ph')}"
+        _emit_system_alert(title, body, severity, repeat_key=repeat_key)
 
 
 @contextmanager
@@ -1767,7 +1860,7 @@ def api_local_state():
     with alert_state_lock:
         result["alert_cursor"] = system_alert_sequence
         if "alerts_recent" in request.args:
-            result["alerts"] = [dict(alert) for alert in list(system_alert_history)[-10:]]
+            result["alerts"] = [dict(alert) for alert in system_alert_history]
         else:
             result["alerts"] = ([dict(alert) for alert in system_alert_history
                                  if alert["id"] > after and alert.get("created_at", 0) >= since]
