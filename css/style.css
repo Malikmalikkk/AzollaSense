@@ -2490,3 +2490,97 @@ body { font-size: var(--font-md); }
   .settings-group-title { font-size: 16px; }
   .section-title-row { margin-top: 24px; }
 }
+
+/* Settings screen refinements */
+.settings-header-row { margin-bottom: 22px; }
+.settings-gear-badge { width: 42px; height: 42px; }
+.settings-segmented-bar {
+  display: flex;
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.settings-segmented-bar::-webkit-scrollbar { display: none; }
+.segment-item {
+  flex: 1 0 auto;
+  min-height: 42px;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+.settings-subgroup { min-width: 0; }
+.settings-group { min-width: 0; }
+.settings-card-list > .settings-group-title {
+  padding: 16px 16px 10px;
+  border-top: 1px solid #edf1ec;
+  background: #f8faf7;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.settings-card-list > .settings-group-title:first-child {
+  border-top: 0;
+}
+.setting-row-card {
+  gap: 14px;
+}
+.setting-row-card > .setting-left-side,
+.setting-row-card > .setting-label {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.setting-label {
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.setting-right-side { flex: 0 0 auto; }
+.config-input { width: 96px; }
+.config-input-pair { flex: 0 0 auto; }
+.setting-select { max-width: min(180px, 44vw); }
+.setting-row-card > .setting-status-text {
+  min-width: 0;
+  text-align: right;
+}
+.settings-save-btn {
+  display: block;
+  width: fit-content;
+  min-width: 148px;
+  min-height: 46px;
+  margin: 22px 0 16px auto;
+  padding: 11px 24px;
+  border-radius: 12px;
+  background: var(--primary-forest);
+  box-shadow: 0 5px 14px rgba(36, 88, 58, .18);
+  font: 700 14px/1.2 var(--font-main);
+  letter-spacing: 0;
+}
+.settings-save-btn:hover { box-shadow: 0 7px 18px rgba(36, 88, 58, .22); }
+
+@media (min-width: 900px) {
+  .settings-subgroup { max-width: 1040px; }
+  .settings-segmented-bar { position: sticky; top: 0; }
+  .settings-save-btn { bottom: 16px; }
+}
+
+@media (max-width: 560px) {
+  .settings-header-row { margin-bottom: 16px; }
+  .settings-segmented-bar { margin-inline: -2px; width: calc(100% + 4px); }
+  .segment-item { padding-inline: 12px; font-size: 12px; }
+  .setting-row-card { align-items: center; gap: 10px; }
+  .setting-row-card:has(.config-input-pair) {
+    align-items: stretch;
+    gap: 8px;
+  }
+  .config-input-pair { justify-content: flex-end; }
+  .config-input { width: min(96px, 29vw); }
+  .setting-select { max-width: 48vw; }
+  .settings-card-list > .settings-group-title { padding: 13px 12px 8px; }
+  .settings-save-btn { width: 100%; margin-top: 18px; }
+}
+
+@media (max-width: 360px) {
+  .setting-row-card { gap: 8px; }
+  .config-input { width: 27vw; padding-inline: 6px; font-size: 12px; }
+  .config-input-pair { gap: 5px; }
+  .setting-row-card:has(.config-input-pair) { gap: 6px; }
+}
