@@ -425,6 +425,21 @@ body::before {
   overflow: hidden;
 }
 
+.tank-image-wrapper.has-stopped-frame::before {
+  content: "";
+  position: absolute;
+  inset: -14px;
+  background-image: var(--stopped-feed-frame);
+  background-position: center;
+  background-size: cover;
+  filter: blur(12px) brightness(0.72);
+  transform: scale(1.04);
+}
+
+.tank-image-wrapper.is-stream-stopped img {
+  visibility: hidden;
+}
+
 .tank-image-wrapper:fullscreen {
   width: 100vw;
   height: 100vh;
@@ -595,6 +610,54 @@ body::before {
   background: #2e7d32;
   color: #ffffff;
   border-color: #69f0ae;
+}
+
+.feed-toggle-btn.is-loading {
+  cursor: wait;
+  opacity: 0.9;
+}
+
+.vision-toggle-loader,
+.feed-loading-spinner {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: feedSpin 0.7s linear infinite;
+}
+
+.feed-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 18px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(168, 243, 190, 0.6);
+  border-radius: 999px;
+  background: rgba(14, 30, 20, 0.84);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+}
+
+.feed-loading-spinner {
+  width: 20px;
+  height: 20px;
+  border-width: 3px;
+  color: #69f0ae;
+}
+
+@keyframes feedSpin {
+  to { transform: rotate(360deg); }
 }
 
 /* Generic visibility utility (replaces inline display:none) */

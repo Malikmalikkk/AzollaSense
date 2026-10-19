@@ -177,7 +177,26 @@
   const stopBtn = byId("stop-stream-btn");
   const liveBadge = byId("feed-live-badge");
   const cvToggleBtn = byId("toggle-cv-overlay");
+  const feedLoading = byId("feed-loading");
+  const visionToggleLoader = cvToggleBtn?.querySelector(".vision-toggle-loader");
+  const visionToggleLabel = byId("vision-toggle-label");
+  const feedWrapper = liveFeed?.closest(".tank-image-wrapper");
   let streamStartedAt = 0;
+  let streamLoading = false;
+
+  function saveLastFeedFrame() {
+    if (!liveFeed || !feedWrapper || !liveFeed.naturalWidth || !liveFeed.naturalHeight) return;
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = liveFeed.naturalWidth;
+      canvas.height = liveFeed.naturalHeight;
+      canvas.getContext("2d").drawImage(liveFeed, 0, 0);
+      feedWrapper.style.setProperty("--stopped-feed-frame", `url("${canvas.toDataURL("image/jpeg", 0.82)}")`);
+      feedWrapper.classList.add("has-stopped-frame");
+    } catch (error) {
+      console.warn("Could not save the last camera frame.", error);
+    }
+  }
 
   function setStreamUI(running) {
     streamRunning = running;
@@ -185,6 +204,15 @@
     if (stopBtn) stopBtn.classList.toggle("is-hidden", !running);
     if (liveBadge) liveBadge.classList.toggle("is-hidden", !running);
     if (cvToggleBtn) cvToggleBtn.classList.toggle("is-hidden", !running);
+    if (!running) streamLoading = false;
+    if (feedLoading) feedLoading.classList.toggle("is-hidden", !streamLoading);
+    if (feedWrapper) {
+      feedWrapper.classList.toggle("is-stream-stopped", !running);
+      if (running) {
+        feedWrapper.classList.remove("has-stopped-frame");
+        feedWrapper.style.removeProperty("--stopped-feed-frame");
+      }
+    }
   }
 
   let lastSessionActivitySent = 0;
@@ -210,7 +238,8 @@
   function setVisionUI(enabled) {
     aiVisionOn = enabled;
     if (!cvToggleBtn) return;
-    cvToggleBtn.textContent = `AI Vision: ${enabled ? "ON" : "OFF"}`;
+    if (visionToggleLabel) visionToggleLabel.textContent = `AI Vision: ${enabled ? "ON" : "OFF"}`;
+    else cvToggleBtn.textContent = `AI Vision: ${enabled ? "ON" : "OFF"}`;
     cvToggleBtn.classList.toggle("vision-on", enabled);
     cvToggleBtn.setAttribute("aria-pressed", String(enabled));
   }
@@ -218,6 +247,7 @@
   function stopCameraStream() {
     if (!streamRunning) return;
 
+    saveLastFeedFrame();
     if (liveFeed) liveFeed.removeAttribute("src");
 
     resetVisionToggle();
@@ -230,6 +260,7 @@
     startBtn.addEventListener("click", () => {
       // Cache-bust so the browser always opens a fresh MJPEG session
       streamStartedAt = Date.now();
+      streamLoading = true;
       liveFeed.src = backendUrl(`/video_feed?stream=${Date.now()}`);
       setStreamUI(true);
       showToast("Connecting to farm camera…");
@@ -237,6 +268,11 @@
   }
 
   if (liveFeed) {
+    liveFeed.addEventListener("load", () => {
+      if (!streamRunning) return;
+      streamLoading = false;
+      if (feedLoading) feedLoading.classList.add("is-hidden");
+    });
     liveFeed.addEventListener("error", () => {
       if (!streamRunning) return;
       resetVisionToggle();
@@ -261,9 +297,18 @@
 
   if (cvToggleBtn) {
     cvToggleBtn.addEventListener("click", () => {
+      if (cvToggleBtn.disabled) return;
       const enabled = !aiVisionOn;
-      dashboardEvents.emit("toggle_ai_vision", { enabled });
-      setVisionUI(enabled);
+      cvToggleBtn.disabled = true;
+      cvToggleBtn.classList.add("is-loading");
+      if (visionToggleLoader) visionToggleLoader.classList.remove("is-hidden");
+      dashboardEvents.emit("toggle_ai_vision", { enabled }, (reply) => {
+        if (reply?.success) setVisionUI(enabled);
+        else showToast(reply?.error || "Could not update AI vision.");
+        cvToggleBtn.disabled = false;
+        cvToggleBtn.classList.remove("is-loading");
+        if (visionToggleLoader) visionToggleLoader.classList.add("is-hidden");
+      });
     });
   }
 
@@ -554,6 +599,7 @@
       dashboardHandlers.sensor_settings?.(data.settings);
       if (typeof data.ai_vision_enabled === "boolean") setVisionUI(data.ai_vision_enabled);
       if (streamRunning && data.streaming === false && Date.now() - streamStartedAt > 5000) {
+        saveLastFeedFrame();
         liveFeed?.removeAttribute("src");
         resetVisionToggle();
         setStreamUI(false);
@@ -596,7 +642,7 @@
     button.addEventListener("click", async () => {
       const target = button.dataset.deviceReboot;
       const label = target === "esp32" ? "ESP32" : "Raspberry Pi";
-      if (!window.confirm(`Reboot the ${label} now?`)) return;
+      showToast(`Requesting ${label} reboot…`);
       button.disabled = true;
       try {
         const response = await fetch(backendUrl("/api/devices/reboot"), {

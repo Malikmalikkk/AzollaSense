@@ -20,7 +20,7 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./css/style.css?v=41" />
+    <link rel="stylesheet" href="./css/style.css?v=42" />
   </head>
 
   <body>
@@ -149,8 +149,14 @@
                   aria-label="Toggle AI vision overlay"
                   aria-pressed="true"
                 >
-                  AI Vision: ON
+                  <span id="vision-toggle-label">AI Vision: ON</span>
+                  <span class="vision-toggle-loader is-hidden" aria-hidden="true"></span>
                 </button>
+
+                <div id="feed-loading" class="feed-loading is-hidden" role="status" aria-live="polite">
+                  <span class="feed-loading-spinner" aria-hidden="true"></span>
+                  <span>Connecting to camera…</span>
+                </div>
 
                 <!-- Play Button Overlay -->
                 <button
@@ -1445,7 +1451,7 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- Application Scripts -->
-    <script src="./js/app.js?v=43" defer></script>
+    <script src="./js/app.js?v=44" defer></script>
     <script>
       // Register Service Worker for PWA
       if ("serviceWorker" in navigator) {
