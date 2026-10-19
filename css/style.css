@@ -431,7 +431,8 @@ body::before {
   inset: -14px;
   background-image: var(--stopped-feed-frame);
   background-position: center;
-  background-size: cover;
+  background-size: contain;
+  background-repeat: no-repeat;
   filter: blur(12px) brightness(0.72);
   transform: scale(1.04);
 }
@@ -1996,7 +1997,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   background: #263a2d;
   box-shadow: var(--shadow-md);
 }
-.tank-feed-card img { object-fit: cover; }
+.tank-feed-card img { object-fit: contain; }
 .tank-image-wrapper:fullscreen img { object-fit: contain; }
 .feed-live-badge { top: 14px; left: 14px; padding: 7px 11px; font-size: 10px; letter-spacing: .06em; }
 .feed-toggle-btn, .feed-fullscreen-btn { top: 14px; right: 14px; padding: 8px 12px; border-radius: 10px; }
