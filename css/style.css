@@ -2123,6 +2123,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   font-size: 13px;
 }
 .system-status-badge span { font-weight: 700; }
+.system-status-badge.is-alert { background: #8e3200; border-color: #ffb74d; }
+.system-status-badge.is-normal { background: #1b5e20; border-color: #81c784; }
 .logs-header-row { margin: 26px 0 12px; }
 .logs-title-group { color: var(--primary-dark); font-size: 17px; font-weight: 750; }
 .logs-title-group svg { color: var(--primary-forest); }

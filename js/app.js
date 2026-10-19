@@ -520,13 +520,21 @@
       const ph = Number(data.ph);
       const brownPct = Number(data.brown_cov);
       const water = Number(data.water_level);
+      const lux = Number(data.lux);
       const hasAlert =
         (data.temperature != null && temp > (sensorSettings.temperature_max_c ?? 34)) ||
         (data.ph != null && (ph < (sensorSettings.ph_min ?? 6.5) || ph > (sensorSettings.ph_max ?? 7.5))) ||
         (data.brown_cov != null && brownPct >= (sensorSettings.browning_alert_pct ?? 10)) ||
-        (data.water_level != null && (water < (sensorSettings.water_min_cm ?? 20) || water > (sensorSettings.water_max_cm ?? 30)));
-      const hasReading = [data.temperature, data.ph, data.brown_cov, data.water_level].some((value) => value != null);
-      badgeText.textContent = hasAlert ? "System Alert: Action Required" : hasReading ? "System Status" : "Waiting for sensor data";
+        (data.water_level != null && (water < (sensorSettings.water_min_cm ?? 20) || water > (sensorSettings.water_max_cm ?? 30))) ||
+        (data.lux != null && lux >= (sensorSettings.canopy_deploy_lux ?? 45000)) ||
+        data.rain_protection_active === true;
+      const hasReading = [data.temperature, data.ph, data.brown_cov, data.water_level, data.lux, data.rain_detected].some((value) => value != null);
+      badgeText.textContent = hasAlert
+        ? "System Alert: Action Required"
+        : hasReading ? "System Status: Normal" : "Waiting for sensor data";
+      const badge = badgeText.closest(".system-status-badge");
+      badge?.classList.toggle("is-alert", hasAlert);
+      badge?.classList.toggle("is-normal", !hasAlert && hasReading);
     }
 
   });
