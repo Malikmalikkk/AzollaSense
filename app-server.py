@@ -1515,6 +1515,8 @@ def handle_toggle_vision(data):
 def send_initial_device_state():
     with state_lock:
         socketio.emit("actuator_update", dict(state["actuators"]), to=request.sid)
+        socketio.emit("telemetry_update", dict(state["telemetry"]), to=request.sid)
+        socketio.emit("vision_state", {"enabled": state["ai_vision_enabled"]}, to=request.sid)
     with settings_lock:
         socketio.emit("sensor_settings", dict(sensor_settings), to=request.sid)
 
@@ -1593,6 +1595,8 @@ def handle_set_actuator(data):
         send_device_command({"pump_auto_running": False})
     if name == "ph_auto" and not enabled:
         send_device_command({"solenoid": False, "pump_auto_running": False})
+    with state_lock:
+        socketio.emit("actuator_update", dict(state["actuators"]))
     return {"success": True, "pending": not sent}
 
 

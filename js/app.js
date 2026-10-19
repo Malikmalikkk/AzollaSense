@@ -85,11 +85,22 @@
     });
   }
 
-  // Keep the dashboard independent of an external Socket.IO client or CDN.
+  // Socket.IO is served by the local Flask backend, so the dashboard can
+  // receive telemetry and actuator changes as soon as the backend publishes them.
   const dashboardHandlers = {};
+  const liveSocket = typeof window.io === "function"
+    ? window.io({ transports: ["polling"], upgrade: false, reconnection: true })
+    : null;
   const dashboardEvents = {
-    on(event, callback) { dashboardHandlers[event] = callback; },
+    on(event, callback) {
+      dashboardHandlers[event] = callback;
+      liveSocket?.on(event, callback);
+    },
     emit(event, data, acknowledge) {
+      if (liveSocket?.connected) {
+        liveSocket.emit(event, data, acknowledge);
+        return;
+      }
       const endpoints = { set_actuator: "/api/actuator", toggle_ai_vision: "/api/vision" };
       const endpoint = endpoints[event];
       if (!endpoint) {
@@ -373,11 +384,13 @@
   /* ------------------------------------------------------------------ */
 
   dashboardEvents.on("connect", () => {
+    localStateConnected = true;
     showToast("Connected to the AzollaSense server.");
     loadLatestBrowningCapture();
   });
 
   dashboardEvents.on("disconnect", () => {
+    localStateConnected = false;
     showToast("Connection to the AzollaSense server was lost.");
   });
 
@@ -581,6 +594,11 @@
   });
 
   dashboardEvents.on("sensor_settings", applySensorSettings);
+  dashboardEvents.on("vision_state", (data) => {
+    if (typeof data?.enabled === "boolean") setVisionUI(data.enabled);
+  });
+  dashboardEvents.on("system_alert", displaySystemAlert);
+  dashboardEvents.on("browning_capture_updated", loadLatestBrowningCapture);
 
   let localStateConnected = false;
   let stopStatePolling = false;
@@ -602,10 +620,12 @@
         else displaySystemAlert(alert);
       });
       alertCursor = data.alert_cursor ?? alertCursor;
-      dashboardHandlers.telemetry_update?.(data.telemetry);
-      dashboardHandlers.actuator_update?.(data.actuators);
-      dashboardHandlers.sensor_settings?.(data.settings);
-      if (typeof data.ai_vision_enabled === "boolean") setVisionUI(data.ai_vision_enabled);
+      if (!liveSocket?.connected) {
+        dashboardHandlers.telemetry_update?.(data.telemetry);
+        dashboardHandlers.actuator_update?.(data.actuators);
+        dashboardHandlers.sensor_settings?.(data.settings);
+        if (typeof data.ai_vision_enabled === "boolean") setVisionUI(data.ai_vision_enabled);
+      }
       if (streamRunning && data.streaming === false && Date.now() - streamStartedAt > 5000) {
         saveLastFeedFrame();
         liveFeed?.removeAttribute("src");
@@ -615,7 +635,7 @@
           ? "Live stream stopped so the camera can capture an image."
           : "The camera stream ended.");
       }
-      if (!localStateConnected) {
+      if (!localStateConnected && !liveSocket?.connected) {
         localStateConnected = true;
         dashboardHandlers.connect?.();
       }
@@ -625,7 +645,7 @@
         dashboardHandlers.disconnect?.();
       }
     } finally {
-      if (!stopStatePolling) window.setTimeout(refreshLocalState, 1500);
+      if (!stopStatePolling) window.setTimeout(refreshLocalState, liveSocket?.connected ? 15000 : 1500);
     }
   }
   refreshLocalState();

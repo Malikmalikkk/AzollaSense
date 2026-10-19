@@ -53,7 +53,7 @@ function sendError(response, status, message) {
 function shouldProxy(pathname) {
   return pathname === '/' || pathname === '/login' || pathname === '/index.html' ||
     pathname === '/health' || pathname === '/video_feed' || pathname === '/api' ||
-    pathname.startsWith('/api/') || pathname.startsWith('/assets/captures/');
+    pathname.startsWith('/api/') || pathname.startsWith('/socket.io/') || pathname.startsWith('/assets/captures/');
 }
 
 function proxyToBackend(request, response) {
@@ -85,12 +85,6 @@ function proxyToBackend(request, response) {
 }
 
 const server = http.createServer((request, response) => {
-  if (request.method !== 'GET' && request.method !== 'HEAD') {
-    response.setHeader('Allow', 'GET, HEAD');
-    sendError(response, 405, 'Method Not Allowed');
-    return;
-  }
-
   let pathname;
   try {
     pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
@@ -103,7 +97,17 @@ const server = http.createServer((request, response) => {
     return;
   }
   if (shouldProxy(pathname)) {
+    if (!['GET', 'HEAD', 'POST', 'OPTIONS'].includes(request.method)) {
+      response.setHeader('Allow', 'GET, HEAD, POST, OPTIONS');
+      sendError(response, 405, 'Method Not Allowed');
+      return;
+    }
     proxyToBackend(request, response);
+    return;
+  }
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    response.setHeader('Allow', 'GET, HEAD');
+    sendError(response, 405, 'Method Not Allowed');
     return;
   }
   if (pathname === '/') pathname = '/index.html';
