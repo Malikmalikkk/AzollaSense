@@ -2676,6 +2676,7 @@ body { font-size: var(--font-md); }
   border-bottom: 1px solid rgba(225, 232, 223, .8);
 }
 #view-settings .settings-segmented-bar {
+  position: -webkit-sticky;
   position: sticky;
   top: 0;
   z-index: 7;
@@ -2724,4 +2725,10 @@ body { font-size: var(--font-md); }
     height: 100%;
     min-height: 0;
   }
+  .screen-scroll-container {
+    min-height: 0;
+    -webkit-overflow-scrolling: touch;
+  }
+  #view-settings { transition: opacity .3s ease; }
+  #view-settings.active { transform: none; }
 }
