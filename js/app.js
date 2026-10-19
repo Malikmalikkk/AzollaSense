@@ -724,6 +724,7 @@
     }
   });
 
+  let managedUsersSnapshot = "";
   async function loadManagedUsers() {
     const list = byId("managed-user-list");
     if (!list) return;
@@ -731,6 +732,9 @@
       const response = await fetch(backendUrl("/api/auth/users"), { cache: "no-store", credentials: "same-origin" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Could not load accounts.");
+      const snapshot = JSON.stringify(result.users || []);
+      if (snapshot === managedUsersSnapshot) return;
+      managedUsersSnapshot = snapshot;
       list.replaceChildren();
       (result.users || []).forEach((user) => {
         const row = document.createElement("div");
@@ -806,6 +810,7 @@
         list.append(empty);
       }
     } catch (error) {
+      managedUsersSnapshot = "";
       list.textContent = error.message || "Could not load accounts.";
     }
   }
@@ -813,7 +818,7 @@
   window.setInterval(() => {
     const accountPanel = byId("account-management-panel");
     if (accountPanel && !accountPanel.classList.contains("is-hidden")) loadManagedUsers();
-  }, 30000);
+  }, 2000);
 
 
   /* ------------------------------------------------------------------ */
@@ -855,6 +860,7 @@
       });
       const saveButton = byId("save-settings-btn");
       if (saveButton) saveButton.classList.toggle("is-hidden", category === "accounts");
+      if (category === "accounts") loadManagedUsers();
     });
   });
 
