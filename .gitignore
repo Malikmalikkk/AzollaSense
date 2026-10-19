@@ -7,3 +7,4 @@
 app-server-windows.py
 /__pycache__
 /runs
+/firmware
