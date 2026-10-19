@@ -837,7 +837,7 @@
         settingsBar.classList.remove("is-docked");
         return;
       }
-      const stickyOffset = window.matchMedia("(max-width: 899px)").matches ? 68 : 0;
+      const stickyOffset = Number.parseFloat(window.getComputedStyle(settingsBar).top) || 0;
       const scrollTop = screenScroller.getBoundingClientRect().top + stickyOffset;
       const isDocked = settingsBar.getBoundingClientRect().top <= scrollTop + 1;
       settingsBar.classList.toggle("is-docked", isDocked);
