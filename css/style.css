@@ -626,7 +626,8 @@ body::before {
   border: 2px solid currentColor;
   border-right-color: transparent;
   border-radius: 50%;
-  animation: feedSpin 0.7s linear infinite;
+  animation: feedLoaderRotate 0.8s linear infinite !important;
+  will-change: transform;
 }
 
 .feed-loading {
@@ -656,7 +657,8 @@ body::before {
   color: #69f0ae;
 }
 
-@keyframes feedSpin {
+@keyframes feedLoaderRotate {
+  from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
 
