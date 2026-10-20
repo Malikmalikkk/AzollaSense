@@ -18,7 +18,7 @@ AzollaSense is a local monitoring and control system for Azolla cultivation. It 
 | `app-server-windows.py` | Windows launcher that uses a connected webcam instead of Raspberry Pi Camera. |
 | `index.html`, `login.html`, `css/`, `js/`, `assets/` | Dashboard, login page, frontend code, and static assets. |
 | `server.js` | Optional Node.js static-file server and reverse proxy to the Python backend. |
-| `Azolla NCNN Model/` | Exported YOLO NCNN segmentation model used by the backend. Classes are `Browning` and `Healthy`. |
+| `azolla_ncnn_model/` | Exported YOLO NCNN segmentation model used by the backend. Classes are `Browning` and `Healthy`. |
 | `AzollaML/train.py` | YOLO training, validation, and NCNN export workflow. |
 | `firmware/azollasense_esp32/` | ESP32 Arduino firmware and hardware design files. |
 | `instance/` | Runtime database and settings location; generated locally and excluded from version control. |
@@ -76,7 +76,7 @@ See [firmware/README.md](firmware/README.md) for wiring, safety notes, rain sens
 
 ## Model training
 
-`AzollaML/train.py` trains a YOLO segmentation model, validates its best checkpoint, and exports it to NCNN. The script currently expects a dataset configuration at `AzollaSense.v2/data.yaml`, a CUDA-capable device (`device=0`), and the `yolo26n-seg.pt` base weights. The dataset and training checkpoint directories are not included in this repository; provide the dataset and required weights before training. Exported model files are placed by Ultralytics in the run output directory; copy the resulting NCNN model directory to `Azolla NCNN Model/` for backend use.
+`AzollaML/train.py` trains a YOLO segmentation model, validates its best checkpoint, and exports it to NCNN. The script currently expects a dataset configuration at `AzollaSense.v2/data.yaml`, a CUDA-capable device (`device=0`), and the `yolo26n-seg.pt` base weights. The dataset and training checkpoint directories are not included in this repository; provide the dataset and required weights before training. Exported model files are placed by Ultralytics in the run output directory; copy the resulting NCNN model directory to `azolla_ncnn_model/` for backend use.
 
 Install the listed Python dependencies before running training. Training settings such as epochs, image size, batch size, and device are configured in `AzollaML/train.py`.
 

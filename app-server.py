@@ -43,7 +43,7 @@ except ImportError:
     webpush = None
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "Azolla NCNN Model")
+MODEL_PATH = os.path.join(BASE_DIR, "azolla_ncnn_model")
 
 # Target frame size for the MJPEG stream (square crop of the camera feed)
 FRAME_SIZE = 640
