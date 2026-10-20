@@ -5,7 +5,7 @@
  * with an offline fallback to the app shell.
  */
 
-const CACHE_NAME = "azollasense-v39";
+const CACHE_NAME = "azollasense-v40";
 const APP_BASE = new URL("./", self.registration.scope);
 const appPath = (path) => new URL(path.replace(/^\//, ""), APP_BASE).href;
 
@@ -16,7 +16,7 @@ const CORE_ASSETS = [
   "./js/app.js?v=49",
   "./js/auth.js?v=3",
   "./manifest.json",
-  "./assets/logo.png",
+  "./assets/logo.svg",
   "./assets/tank.png",
   "./assets/pond.jpg",
   "./assets/welcome_bg.png",
@@ -87,7 +87,7 @@ self.addEventListener("fetch", (event) => {
       return response;
     } catch (error) {
       if (request.destination === "image") {
-        const fallback = await cache.match(appPath("assets/logo.png"));
+        const fallback = await cache.match(appPath("assets/logo.svg"));
         if (fallback) return fallback;
       }
       throw error;
@@ -111,8 +111,8 @@ self.addEventListener("push", (event) => {
     if (dashboardIsVisible) return;
     await self.registration.showNotification(payload.title || "AzollaSense system alert", {
       body: payload.body || "A system status changed.",
-      icon: appPath("assets/logo.png"),
-      badge: appPath("assets/logo.png"),
+      icon: appPath("assets/logo.svg"),
+      badge: appPath("assets/logo.svg"),
       tag: payload.tag || "azollasense-system-alert",
       data: { url: appPath("./") }
     });
