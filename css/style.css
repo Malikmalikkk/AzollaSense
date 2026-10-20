@@ -2292,11 +2292,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 .auth-page { background: #f3f6f1; }
 .auth-card { border-color: #e2e9e1; border-radius: 20px; box-shadow: 0 16px 48px rgba(25,54,34,.1); }
-.auth-mark { display: grid; width: 75px; height: 75px; margin: 0 auto 18px; place-items: center; border-radius: 16px; background: #edf5ed; }
-.auth-mark img { display: block; width: 70px; height: 70px; object-fit: contain; }
+.auth-mark { display: grid; width: 125px; height: 125px; margin: 0 auto 18px; place-items: center; border-radius: 16px; }
+.auth-mark img { display: block; width: 120px; height: 120px; object-fit: contain; }
 .auth-eyebrow { color: var(--primary-forest); }
 .auth-card h1 { color: var(--primary-dark); letter-spacing: -.7px; }
-.auth-card input { min-height: 46px; border-color: #dce5da; border-radius: 10px; }
+.auth-card input { min-height: 46px; border-radius: 10px; }
 .auth-card input:focus { border-color: var(--primary-leaf); outline: 3px solid rgba(75,149,97,.16); }
 .auth-submit, .local-user-form button {
   min-height: 46px;

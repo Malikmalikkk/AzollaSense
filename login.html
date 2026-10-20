@@ -15,6 +15,7 @@
 <body class="auth-page">
   <main class="auth-card">
     <div class="auth-mark" aria-hidden="true"><img src="./assets/logo.svg" alt=""></div>
+    <h2>Welcome</h2>
     <p id="auth-intro" class="auth-intro">Sign in to continue to your dashboard.</p>
     <form id="auth-form" autocomplete="on">
       <label for="auth-username">Username</label>
@@ -22,7 +23,7 @@
       <label for="auth-password">Password</label>
       <input id="auth-password" name="password" type="password" autocomplete="current-password" required minlength="10" maxlength="256">
       <p id="auth-error" class="auth-error" role="alert" aria-live="polite"></p>
-      <button id="auth-submit" class="auth-submit" type="submit" disabled>Checking local account…</button>
+      <button id="auth-submit" class="auth-submit" type="submit" disabled>Login</button>
     </form>
     <p class="auth-local-note">Your account is stored on this Raspberry Pi. Internet access is not required.</p>
   </main>
