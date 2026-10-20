@@ -85,8 +85,8 @@
     });
   }
 
-  // Socket.IO is served by the local Flask backend, so the dashboard can
-  // receive telemetry and actuator changes as soon as the backend publishes them.
+  // Use the compatible Socket.IO v4 client to receive backend events; REST
+  // polling and command fallbacks remain available if the client cannot load.
   const dashboardHandlers = {};
   const liveSocket = typeof window.io === "function"
     ? window.io({ transports: ["polling"], upgrade: false, reconnection: true })
