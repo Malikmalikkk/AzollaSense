@@ -20,10 +20,10 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./css/style.css?v=49" />
+    <link rel="stylesheet" href="./css/style.css?v=50" />
   </head>
 
-  <body class="app-page">
+  <body class="app-page role-pending">
     <!-- App Loader (welcome backdrop) -->
     <div
       id="app-loader"
@@ -146,6 +146,7 @@
                 <button
                   id="toggle-cv-overlay"
                   class="feed-toggle-btn vision-on is-hidden"
+                  data-admin-only
                   aria-label="Toggle AI vision overlay"
                   aria-pressed="true"
                 >
@@ -441,6 +442,7 @@
               <button
                 id="trigger-browning-capture"
                 class="capture-trigger-btn"
+                data-admin-only
                 type="button"
               >
                 Capture now
@@ -800,10 +802,10 @@
               <button class="segment-item active" data-category="app">
                 App Settings
               </button>
-              <button class="segment-item" data-category="sensor">
+              <button class="segment-item" data-category="sensor" data-admin-only>
                 Sensor Settings
               </button>
-              <button class="segment-item" data-category="machine">
+              <button class="segment-item" data-category="machine" data-admin-only>
                 Machine Settings
               </button>
               <button class="segment-item is-hidden" data-category="accounts" id="account-management-tab">
@@ -890,7 +892,7 @@
             </div>
 
             <!-- Group B: Sensor Settings (Categorized) -->
-            <div class="settings-subgroup is-hidden" data-group="sensor">
+            <div class="settings-subgroup is-hidden" data-group="sensor" data-admin-only>
               <div class="settings-group">
                 <h3 class="settings-group-title">Thresholds & Calibration</h3>
                 <div class="settings-card-list">
@@ -1130,7 +1132,7 @@
             </div>
 
             <!-- Group C: Machine Settings -->
-            <div class="settings-subgroup is-hidden" data-group="machine">
+            <div class="settings-subgroup is-hidden" data-group="machine" data-admin-only>
               <div class="settings-group">
                 <h3 class="settings-group-title">Actuator Hardware</h3>
                 <div class="settings-card-list">
@@ -1247,6 +1249,11 @@
                   <input id="new-user-name" name="username" required minlength="3" maxlength="40" pattern="[A-Za-z0-9_-]+" title="Use letters, numbers, underscores, and hyphens." autocomplete="username" autocapitalize="none" />
                   <label for="new-user-password">Password</label>
                   <input id="new-user-password" name="password" type="password" required minlength="10" maxlength="256" autocomplete="new-password" />
+                  <label for="new-user-role">Role</label>
+                  <select id="new-user-role" name="role" required>
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                  </select>
                   <button type="submit">Create account</button>
                   <p id="add-user-message" role="status" aria-live="polite"></p>
                 </form>
@@ -1257,6 +1264,7 @@
             <button
               id="save-settings-btn"
               class="settings-save-btn"
+              data-admin-only
               type="button"
             >
               Save
@@ -1452,7 +1460,7 @@
 
     <!-- Application Scripts -->
     <script src="https://cdn.socket.io/4.8.4/socket.io.min.js" defer></script>
-    <script src="./js/app.js?v=49" defer></script>
+    <script src="./js/app.js?v=50" defer></script>
     <script>
       // Register Service Worker for PWA
       if ("serviceWorker" in navigator) {

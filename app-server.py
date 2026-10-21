@@ -32,7 +32,7 @@ try:
 except ImportError:
     Picamera2 = None
 from flask import Flask, Response, jsonify, request, send_from_directory, redirect, make_response, g, stream_with_context
-from flask_socketio import SocketIO
+from flask_socketio import SocketIO, join_room
 from ultralytics import YOLO
 import serial
 from serial.tools import list_ports
@@ -96,6 +96,9 @@ def init_push_db():
     with PUSH_DB_LOCK, sqlite3.connect(PUSH_DB_PATH, timeout=10) as connection:
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("CREATE TABLE IF NOT EXISTS push_subscriptions (endpoint TEXT PRIMARY KEY, subscription_json TEXT NOT NULL, created_at TEXT NOT NULL)")
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(push_subscriptions)")}
+        if "user_id" not in columns:
+            connection.execute("ALTER TABLE push_subscriptions ADD COLUMN user_id INTEGER")
 
 
 init_push_db()
@@ -108,15 +111,18 @@ def init_alert_db():
     with ALERT_DB_LOCK, sqlite3.connect(ALERT_DB_PATH, timeout=10) as connection:
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("CREATE TABLE IF NOT EXISTS system_alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, body TEXT NOT NULL, severity TEXT NOT NULL, tag TEXT NOT NULL, created_at REAL NOT NULL)")
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(system_alerts)")}
+        if "audience" not in columns:
+            connection.execute("ALTER TABLE system_alerts ADD COLUMN audience TEXT NOT NULL DEFAULT 'all'")
         connection.execute("CREATE TABLE IF NOT EXISTS alert_reminders (alert_key TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL, severity TEXT NOT NULL, last_notified_at REAL NOT NULL)")
         rows = connection.execute(
-            "SELECT id,title,body,severity,tag,created_at FROM system_alerts ORDER BY id DESC LIMIT ?",
+            "SELECT id,title,body,severity,tag,created_at,audience FROM system_alerts ORDER BY id DESC LIMIT ?",
             (ALERT_LOG_LIMIT,),
         ).fetchall()
         sequence = connection.execute("SELECT COALESCE(MAX(id),0) FROM system_alerts").fetchone()[0]
     with alert_state_lock:
         system_alert_history.extend(
-            {"id": row[0], "title": row[1], "body": row[2], "severity": row[3], "tag": row[4], "created_at": row[5]}
+            {"id": row[0], "title": row[1], "body": row[2], "severity": row[3], "tag": row[4], "created_at": row[5], "audience": row[6]}
             for row in reversed(rows)
         )
         system_alert_sequence = sequence
@@ -149,11 +155,22 @@ def _maintain_alert_reminders(active_warnings, initialize_missing=False):
         _emit_system_alert(f"Still unresolved: {title}", body, severity, repeat_key=alert_key)
 
 
-def _send_web_push(payload):
+def _send_web_push(payload, audience="all"):
     if webpush is None or not (VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY and VAPID_SUBJECT):
         return
+    if audience == "admin":
+        with AUTH_DB_LOCK, auth_db() as connection:
+            admin_ids = [row[0] for row in connection.execute("SELECT id FROM users WHERE role='admin'")]
+        if not admin_ids:
+            return
+        placeholders = ",".join("?" for _ in admin_ids)
+        query = f"SELECT endpoint,subscription_json FROM push_subscriptions WHERE user_id IN ({placeholders})"
+        params = admin_ids
+    else:
+        query = "SELECT endpoint,subscription_json FROM push_subscriptions"
+        params = ()
     with PUSH_DB_LOCK, sqlite3.connect(PUSH_DB_PATH, timeout=10) as connection:
-        rows = connection.execute("SELECT endpoint, subscription_json FROM push_subscriptions").fetchall()
+        rows = connection.execute(query, params).fetchall()
     for endpoint, raw_subscription in rows:
         try:
             webpush(json.loads(raw_subscription), json.dumps(payload), VAPID_PRIVATE_KEY,
@@ -169,14 +186,14 @@ def _send_web_push(payload):
             print(f"[PUSH] Delivery failed: {exc}")
 
 
-def _emit_system_alert(title, body, severity="warning", repeat_key=None):
+def _emit_system_alert(title, body, severity="warning", repeat_key=None, audience="all"):
     global system_alert_sequence
     created_at = time.time()
     tag = f"azollasense-{int(created_at * 1000)}"
     with ALERT_DB_LOCK, sqlite3.connect(ALERT_DB_PATH, timeout=10) as connection:
         cursor = connection.execute(
-            "INSERT INTO system_alerts(title,body,severity,tag,created_at) VALUES (?,?,?,?,?)",
-            (title, body, severity, tag, created_at),
+            "INSERT INTO system_alerts(title,body,severity,tag,created_at,audience) VALUES (?,?,?,?,?,?)",
+            (title, body, severity, tag, created_at, audience),
         )
         alert_id = cursor.lastrowid
         connection.execute(
@@ -190,13 +207,16 @@ def _emit_system_alert(title, body, severity="warning", repeat_key=None):
                 (repeat_key, title.removeprefix("Still unresolved: "), body, severity, created_at),
             )
     payload = {"id": alert_id, "title": title, "body": body, "severity": severity,
-               "tag": tag, "created_at": created_at}
+               "tag": tag, "created_at": created_at, "audience": audience}
     with alert_state_lock:
         system_alert_sequence = alert_id
         system_alert_history.append(payload)
-    socketio.emit("system_alert", payload)
+    if audience == "admin":
+        socketio.emit("system_alert", payload, to="system_admins")
+    else:
+        socketio.emit("system_alert", payload)
     if webpush is not None and VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY and VAPID_SUBJECT:
-        push_executor.submit(_send_web_push, payload)
+        push_executor.submit(_send_web_push, payload, audience)
 
 
 def _evaluate_alert_transitions(telemetry, actuators, settings):
@@ -383,7 +403,15 @@ def auth_db():
 def init_auth_db():
     with AUTH_DB_LOCK, auth_db() as connection:
         connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash BLOB NOT NULL, password_salt BLOB NOT NULL, created_at TEXT NOT NULL)")
+        connection.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash BLOB NOT NULL, password_salt BLOB NOT NULL, created_at TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin','user')))")
+        user_columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
+        if "role" not in user_columns:
+            connection.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin','user'))")
+            malik = connection.execute("SELECT id FROM users WHERE username='malik' COLLATE NOCASE").fetchone()
+            if malik:
+                connection.execute("UPDATE users SET role='admin' WHERE id=?", (malik["id"],))
+            elif connection.execute("SELECT 1 FROM users LIMIT 1").fetchone():
+                connection.execute("UPDATE users SET role='admin' WHERE id=(SELECT id FROM users ORDER BY id LIMIT 1)")
         connection.execute("CREATE TABLE IF NOT EXISTS sessions (token_hash BLOB PRIMARY KEY, user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE, expires_at TEXT, is_local INTEGER NOT NULL DEFAULT 0, last_activity_at REAL)")
         columns = {row[1] for row in connection.execute("PRAGMA table_info(sessions)")}
         indexes = connection.execute("PRAGMA index_list(sessions)").fetchall()
@@ -437,7 +465,7 @@ def is_loopback_request():
 
 def is_system_admin(user=None):
     user = user if user is not None else getattr(g, "user", None)
-    return bool(user and user["username"].casefold() == "malik")
+    return bool(user and user["role"] == "admin")
 
 
 def create_session(user_id, local=False):
@@ -463,9 +491,9 @@ def load_local_user():
     if token:
         token_hash = hashlib.sha256(token.encode("utf-8")).digest()
         with AUTH_DB_LOCK, auth_db() as connection:
-            row = connection.execute("SELECT users.id, users.username, sessions.expires_at, sessions.is_local FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=?", (token_hash,)).fetchone()
+            row = connection.execute("SELECT users.id, users.username, users.role, sessions.expires_at, sessions.is_local FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=?", (token_hash,)).fetchone()
             if row:
-                g.user = {"id": row["id"], "username": row["username"], "token_hash": token_hash, "is_local": bool(row["is_local"])}
+                g.user = {"id": row["id"], "username": row["username"], "role": row["role"], "token_hash": token_hash, "is_local": bool(row["is_local"])}
 
     path = request.path
     public = (
@@ -489,6 +517,8 @@ def require_socket_login(auth=None):
     token_hash = hashlib.sha256(token.encode("utf-8")).digest()
     if not session_is_valid(token_hash):
         return False
+    if session_role(token_hash) == "admin":
+        join_room("system_admins")
     send_initial_device_state()
     socketio.start_background_task(enforce_socket_session, request.sid, token_hash)
     return True
@@ -497,6 +527,22 @@ def require_socket_login(auth=None):
 def session_is_valid(token_hash, refresh=False):
     with AUTH_DB_LOCK, auth_db() as connection:
         return connection.execute("SELECT 1 FROM sessions WHERE token_hash=?", (token_hash,)).fetchone() is not None
+
+
+def session_role(token_hash):
+    with AUTH_DB_LOCK, auth_db() as connection:
+        row = connection.execute(
+            "SELECT users.role FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=?",
+            (token_hash,),
+        ).fetchone()
+    return row["role"] if row else None
+
+
+def socket_user_is_admin():
+    token = request.cookies.get(SESSION_COOKIE, "")
+    if not token:
+        return False
+    return session_role(hashlib.sha256(token.encode("utf-8")).digest()) == "admin"
 
 
 def enforce_socket_session(sid, token_hash):
@@ -1503,6 +1549,8 @@ def telemetry_log_thread():
 
 @socketio.on("toggle_ai_vision")
 def handle_toggle_vision(data):
+    if not socket_user_is_admin():
+        return {"success": False, "error": "Administrator access required."}
     if not isinstance(data, dict) or not isinstance(data.get("enabled"), bool):
         return {"success": False, "error": "Vision setting must be true or false."}
     enabled = data["enabled"]
@@ -1525,6 +1573,8 @@ def send_initial_device_state():
 def handle_set_actuator(data):
     """Request a manual output state or switch canopy control mode."""
     global ph_exchange_stage
+    if not socket_user_is_admin():
+        return {"success": False, "error": "Administrator access required."}
     if not isinstance(data, dict):
         return {"success": False, "error": "Expected an actuator command."}
     name = data.get("name")
@@ -1647,7 +1697,7 @@ def request_json_object():
 def auth_status():
     with AUTH_DB_LOCK, auth_db() as connection:
         configured = connection.execute("SELECT 1 FROM users LIMIT 1").fetchone() is not None
-    return no_store(jsonify({"configured": configured, "authenticated": bool(g.user), "username": g.user["username"] if g.user else None, "is_admin": is_system_admin()}))
+    return no_store(jsonify({"configured": configured, "authenticated": bool(g.user), "user_id": g.user["id"] if g.user else None, "username": g.user["username"] if g.user else None, "role": g.user["role"] if g.user else None, "is_admin": is_system_admin()}))
 
 
 @app.route("/api/auth/setup", methods=["POST"])
@@ -1666,7 +1716,7 @@ def auth_setup():
         if connection.execute("SELECT 1 FROM users LIMIT 1").fetchone():
             return jsonify({"error": "Initial setup is already complete."}), 409
         try:
-            cursor = connection.execute("INSERT INTO users(username,password_hash,password_salt,created_at) VALUES (?,?,?,?)", (username, password_digest(password, salt), salt, datetime.now(timezone.utc).isoformat()))
+            cursor = connection.execute("INSERT INTO users(username,password_hash,password_salt,created_at,role) VALUES (?,?,?,?, 'admin')", (username, password_digest(password, salt), salt, datetime.now(timezone.utc).isoformat()))
             user_id = cursor.lastrowid
         except sqlite3.IntegrityError:
             return jsonify({"error": "That username is already in use."}), 409
@@ -1706,6 +1756,7 @@ def auth_login():
     token = create_session(row["id"], local)
     if not token:
         return jsonify({"error": "This account is already active on another device. Try again after 5 minutes without activity, or ask the system administrator to sign it out."}), 409
+    _emit_system_alert("User signed in", f"{username} signed in to AzollaSense.", severity="info", audience="admin")
     return set_session_cookie(jsonify({"success": True}), token, local)
 
 
@@ -1739,7 +1790,7 @@ def auth_list_users():
     if not is_system_admin():
         return jsonify({"error": "System administrator access required."}), 403
     with AUTH_DB_LOCK, auth_db() as connection:
-        rows = connection.execute("SELECT users.id,users.username,users.created_at,CASE WHEN sessions.user_id IS NULL THEN 'signed_out' WHEN sessions.last_activity_at>? THEN 'active' ELSE 'idle' END AS session_status FROM users LEFT JOIN sessions ON sessions.user_id=users.id ORDER BY users.username COLLATE NOCASE", (time.time() - SESSION_IDLE_TIMEOUT_SECONDS,)).fetchall()
+        rows = connection.execute("SELECT users.id,users.username,users.role,users.created_at,CASE WHEN sessions.user_id IS NULL THEN 'signed_out' WHEN sessions.last_activity_at>? THEN 'active' ELSE 'idle' END AS session_status FROM users LEFT JOIN sessions ON sessions.user_id=users.id ORDER BY users.username COLLATE NOCASE", (time.time() - SESSION_IDLE_TIMEOUT_SECONDS,)).fetchall()
     return no_store(jsonify({"users": [dict(row) for row in rows]}))
 
 
@@ -1751,14 +1802,17 @@ def auth_add_user():
     if data is None:
         return jsonify({"error": "Expected a username and password."}), 400
     username, password = data.get("username", ""), data.get("password", "")
+    role = data.get("role", "user")
     if isinstance(username, str):
         username = username.strip()
+    if role not in ("admin", "user"):
+        return jsonify({"error": "Choose either the admin or user role."}), 400
     if not isinstance(username, str) or not isinstance(password, str) or not 3 <= len(username) <= 40 or not username.replace("_", "").replace("-", "").isalnum() or len(password) < 10 or len(password) > 256:
         return jsonify({"error": "Use a 3–40 character username and a password of at least 10 characters."}), 400
     salt = secrets.token_bytes(16)
     try:
         with AUTH_DB_LOCK, auth_db() as connection:
-            connection.execute("INSERT INTO users(username,password_hash,password_salt,created_at) VALUES (?,?,?,?)", (username, password_digest(password, salt), salt, datetime.now(timezone.utc).isoformat()))
+            connection.execute("INSERT INTO users(username,password_hash,password_salt,created_at,role) VALUES (?,?,?,?,?)", (username, password_digest(password, salt), salt, datetime.now(timezone.utc).isoformat(), role))
     except sqlite3.IntegrityError:
         return jsonify({"error": "That username is already in use."}), 409
     return jsonify({"success": True}), 201
@@ -1769,15 +1823,17 @@ def auth_remove_user(user_id):
     if not is_system_admin():
         return jsonify({"error": "System administrator access required."}), 403
     if user_id == g.user["id"]:
-        return jsonify({"error": "The system administrator account cannot be removed while signed in."}), 400
+        return jsonify({"error": "The account you are signed in with cannot be removed."}), 400
     with AUTH_DB_LOCK, auth_db() as connection:
-        target = connection.execute("SELECT username FROM users WHERE id=?", (user_id,)).fetchone()
+        target = connection.execute("SELECT id,username,role FROM users WHERE id=?", (user_id,)).fetchone()
         if not target:
             return jsonify({"error": "Account not found."}), 404
-        if target["username"].casefold() == "malik":
-            return jsonify({"error": "The system administrator account cannot be removed."}), 400
+        if target["role"] == "admin" and connection.execute("SELECT COUNT(*) FROM users WHERE role='admin'").fetchone()[0] <= 1:
+            return jsonify({"error": "The last administrator account cannot be removed."}), 400
         connection.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
         connection.execute("DELETE FROM users WHERE id=?", (user_id,))
+    with PUSH_DB_LOCK, sqlite3.connect(PUSH_DB_PATH, timeout=10) as connection:
+        connection.execute("DELETE FROM push_subscriptions WHERE user_id=?", (user_id,))
     return jsonify({"success": True})
 
 
@@ -1953,10 +2009,12 @@ def api_local_state():
     with alert_state_lock:
         result["alert_cursor"] = system_alert_sequence
         if "alerts_recent" in request.args:
-            result["alerts"] = [dict(alert) for alert in system_alert_history]
+            result["alerts"] = [dict(alert) for alert in system_alert_history
+                                if is_system_admin() or alert.get("audience", "all") == "all"]
         else:
             result["alerts"] = ([dict(alert) for alert in system_alert_history
-                                 if alert["id"] > after and alert.get("created_at", 0) >= since]
+                                 if (is_system_admin() or alert.get("audience", "all") == "all")
+                                 and alert["id"] > after and alert.get("created_at", 0) >= since]
                                 if "alerts_after" in request.args else [])
     return jsonify(result)
 
@@ -1966,7 +2024,7 @@ def api_push_status():
     subscription = request.args.get("endpoint", "")
     with PUSH_DB_LOCK, sqlite3.connect(PUSH_DB_PATH, timeout=10) as connection:
         subscribed = bool(subscription and connection.execute(
-            "SELECT 1 FROM push_subscriptions WHERE endpoint=?", (subscription,)
+            "SELECT 1 FROM push_subscriptions WHERE endpoint=? AND user_id=?", (subscription, g.user["id"])
         ).fetchone())
     return no_store(jsonify({"public_key": VAPID_PUBLIC_KEY, "subscribed": subscribed,
                              "available": bool(webpush and VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY and VAPID_SUBJECT)}))
@@ -1982,7 +2040,7 @@ def api_push_subscription():
         if not isinstance(endpoint, str) or len(endpoint) > 4096:
             return jsonify({"error": "A valid subscription endpoint is required."}), 400
         with PUSH_DB_LOCK, sqlite3.connect(PUSH_DB_PATH, timeout=10) as connection:
-            connection.execute("DELETE FROM push_subscriptions WHERE endpoint=?", (endpoint,))
+            connection.execute("DELETE FROM push_subscriptions WHERE endpoint=? AND user_id=?", (endpoint, g.user["id"]))
         return no_store(jsonify({"success": True}))
 
     if not (webpush and VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY and VAPID_SUBJECT):
@@ -1996,13 +2054,15 @@ def api_push_subscription():
             not isinstance(keys, dict) or not isinstance(keys.get("p256dh"), str) or not isinstance(keys.get("auth"), str)):
         return jsonify({"error": "The browser subscription is incomplete or invalid."}), 400
     with PUSH_DB_LOCK, sqlite3.connect(PUSH_DB_PATH, timeout=10) as connection:
-        connection.execute("INSERT INTO push_subscriptions(endpoint,subscription_json,created_at) VALUES (?,?,?) ON CONFLICT(endpoint) DO UPDATE SET subscription_json=excluded.subscription_json",
-                           (endpoint, json.dumps(subscription), datetime.now(timezone.utc).isoformat()))
+        connection.execute("INSERT INTO push_subscriptions(endpoint,subscription_json,created_at,user_id) VALUES (?,?,?,?) ON CONFLICT(endpoint) DO UPDATE SET subscription_json=excluded.subscription_json,user_id=excluded.user_id",
+                           (endpoint, json.dumps(subscription), datetime.now(timezone.utc).isoformat(), g.user["id"]))
     return no_store(jsonify({"success": True}))
 
 
 @app.route("/api/vision", methods=["POST"])
 def api_set_vision():
+    if not is_system_admin():
+        return jsonify({"error": "Administrator access required."}), 403
     data = request_json_object()
     if data is None or not isinstance(data.get("enabled"), bool):
         return jsonify({"error": "Vision setting must be true or false."}), 400
@@ -2014,6 +2074,8 @@ def api_set_vision():
 
 @app.route("/api/actuator", methods=["POST"])
 def api_set_actuator():
+    if not is_system_admin():
+        return jsonify({"error": "Administrator access required."}), 403
     data = request_json_object()
     reply = handle_set_actuator(data)
     return jsonify(reply), (200 if reply.get("success") else 400)
@@ -2021,6 +2083,8 @@ def api_set_actuator():
 
 @app.route("/api/devices/reboot", methods=["POST"])
 def api_reboot_device():
+    if not is_system_admin():
+        return jsonify({"error": "Administrator access required."}), 403
     data = request_json_object()
     if data is None:
         return jsonify({"success": False, "error": "Expected a reboot target."}), 400
@@ -2048,6 +2112,8 @@ def api_settings():
     if request.method == "GET":
         with settings_lock:
             return no_store(jsonify(dict(sensor_settings)))
+    if not is_system_admin():
+        return jsonify({"success": False, "error": "Administrator access required."}), 403
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -2114,6 +2180,8 @@ def api_latest_browning_capture():
 
 @app.route("/api/browning/capture", methods=["POST"])
 def api_trigger_browning_capture():
+    if not is_system_admin():
+        return jsonify({"success": False, "error": "Administrator access required."}), 403
     try:
         if not run_daily_capture(force=True):
             return jsonify({"success": False, "error": "Camera capture failed. Check that the camera is connected."}), 503

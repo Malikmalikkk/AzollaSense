@@ -1850,6 +1850,7 @@ input:checked+.slider-knob::before {
 .local-user-form h4 { margin: 0 0 4px; color: var(--primary-dark); }
 .local-user-form label { font-size: 12px; font-weight: 700; }
 .local-user-form input { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #d3dfd4; border-radius: 8px; font: inherit; }
+.local-user-form select { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #d3dfd4; border-radius: 8px; background: #fff; font: inherit; }
 .local-user-form button { margin-top: 4px; padding: 10px; border: 0; border-radius: 8px; background: #276b38; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 .local-user-form p { min-height: 18px; margin: 0; font-size: 12px; color: #315b39; }
 .account-list { overflow: hidden; border: 1px solid var(--card-border); border-radius: 14px; background: #fff; }
@@ -1857,7 +1858,9 @@ input:checked+.slider-knob::before {
 .account-list-row:last-child { border-bottom: 0; }
 .account-list-row > div { display: grid; gap: 4px; min-width: 0; }
 .account-list-row strong { overflow-wrap: anywhere; color: var(--text-primary); font-size: 13px; }
-.account-created-at, .account-admin-label { color: var(--text-muted); font-size: 11px; }
+.account-created-at, .account-admin-label, .account-role-label { color: var(--text-muted); font-size: 11px; }
+.account-role-label { padding: 5px 9px; border-radius: 999px; background: #eef2ed; font-weight: 700; }
+.account-role-label.is-admin { background: #e4f1e5; color: #276b38; }
 .account-status { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; }
 .account-status::before { width: 7px; height: 7px; border-radius: 50%; background: #9aa59b; content: ""; }
 .account-status.is-active { color: #28713b; }
@@ -2666,6 +2669,16 @@ body { font-size: var(--font-md); }
     box-shadow: var(--shadow-sm);
   }
   #account-management-panel .account-add-form input { min-height: 42px; }
+  #account-management-panel .account-add-form select { min-height: 42px; }
+}
+
+.role-user [data-admin-only],
+.role-pending [data-admin-only],
+.role-user #account-management-tab,
+.role-pending #account-management-tab,
+.role-user #account-management-panel,
+.role-pending #account-management-panel {
+  display: none !important;
 }
 
 /* Keep the Settings title and category bar pinned above the settings content. */

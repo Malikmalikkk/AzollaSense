@@ -84,6 +84,8 @@ Install the listed Python dependencies before running training. Training setting
 
 The backend creates `instance/` for local accounts, sessions, telemetry history, alerts, push subscriptions, sensor settings, and actuator preferences. Captured images and capture metadata are written under `assets/captures/`. These are machine-specific runtime data and should be backed up or handled separately from the source code.
 
+Accounts have `admin` and `user` roles. The first account created during setup is an admin; existing installations promote the `malik` account during the role migration. Admins can create accounts and change system controls and settings. Users can view the dashboard and telemetry. Admins receive an in-app alert when an account signs in, and can enable browser push notifications in App Settings.
+
 Web push alerts are optional. Configure `AZOLLASENSE_VAPID_PUBLIC_KEY`, `AZOLLASENSE_VAPID_PRIVATE_KEY`, and `AZOLLASENSE_VAPID_SUBJECT` to enable push delivery. The dashboard and core monitoring do not require these keys.
 
 For Raspberry Pi reboot controls, follow the restricted sudoers setup documented in [firmware/README.md](firmware/README.md).

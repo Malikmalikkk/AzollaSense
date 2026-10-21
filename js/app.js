@@ -651,14 +651,20 @@
   refreshLocalState();
 
   const logoutButton = byId("logout-btn");
+  let currentAccountId = null;
   fetch(backendUrl("/api/auth/status"), { cache: "no-store", credentials: "same-origin" })
     .then((response) => response.ok ? response.json() : Promise.reject(new Error("Not signed in")))
     .then((account) => {
+      currentAccountId = account.user_id;
+      const isAdmin = account.role === "admin";
+      document.body.classList.remove("role-pending");
+      document.body.classList.toggle("role-admin", isAdmin);
+      document.body.classList.toggle("role-user", !isAdmin);
       const name = byId("profile-username");
       const profile = byId("profile-btn");
       if (name && account.username) name.textContent = account.username;
       if (profile && account.username) profile.title = `Signed in as ${account.username}`;
-      if (account.is_admin) {
+      if (isAdmin) {
         const accountTab = byId("account-management-tab");
         if (accountTab) accountTab.classList.remove("is-hidden");
         loadManagedUsers();
@@ -709,7 +715,7 @@
     try {
       const response = await fetch(backendUrl("/api/auth/users"), {
         method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: formData.get("username"), password: formData.get("password") })
+        body: JSON.stringify({ username: formData.get("username"), password: formData.get("password"), role: formData.get("role") })
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Could not create account.");
@@ -774,12 +780,11 @@
           });
           row.append(signOut);
         }
-        if (user.username.toLowerCase() === "malik") {
-          const role = document.createElement("span");
-          role.className = "account-admin-label";
-          role.textContent = "System administrator";
-          row.append(role);
-        } else {
+        const role = document.createElement("span");
+        role.className = `account-role-label is-${user.role}`;
+        role.textContent = user.role === "admin" ? "Admin" : "User";
+        row.append(role);
+        if (user.id !== currentAccountId) {
           const remove = document.createElement("button");
           remove.className = "account-delete-btn";
           remove.type = "button";
@@ -923,7 +928,14 @@
     if ("serviceWorker" in navigator) navigator.serviceWorker.ready.then(async (registration) => {
       try {
         const subscription = await registration.pushManager.getSubscription();
-        const status = await getPushSubscriptionStatus(subscription);
+        let status = await getPushSubscriptionStatus(subscription);
+        if (subscription && status.available && "Notification" in window && Notification.permission === "granted" && !status.subscribed) {
+          const bindResponse = await fetch(backendUrl("/api/push/subscription"), {
+            method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(subscription.toJSON())
+          });
+          if (bindResponse.ok) status = await getPushSubscriptionStatus(subscription);
+        }
         notifToggle.checked = Boolean(subscription && status.subscribed);
         notifStatusText.textContent = notifToggle.checked ? "Enabled" : "Disabled";
         if (!status.available && !notifToggle.checked) notifStatusText.title = "Server push settings are not configured.";
