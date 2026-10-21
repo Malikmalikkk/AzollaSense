@@ -20,7 +20,7 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./css/style.css?v=50" />
+    <link rel="stylesheet" href="./css/style.css?v=51" />
   </head>
 
   <body class="app-page role-pending">
@@ -1440,10 +1440,16 @@
           </div>
           <div class="settings-card-list">
             <div class="setting-row-card">
-              <span class="setting-label">Pond Unit ID</span>
-              <span class="setting-status-text">AZ-POND-04</span>
+              <span class="setting-label">Azolla Farm Name:</span>
+              <span id="profile-farm-name" class="setting-status-text">AZ-POND-04</span>
             </div>
           </div>
+          <form id="farm-name-form" class="farm-name-form is-hidden" data-admin-only>
+            <label for="farm-name-input">Azolla Farm Name</label>
+            <input id="farm-name-input" name="farm_name" type="text" required maxlength="80" autocomplete="organization" />
+            <button id="farm-name-save" type="submit">Save farm name</button>
+            <p id="farm-name-message" role="status" aria-live="polite"></p>
+          </form>
           <button
             id="logout-btn"
             class="logout-btn profile-logout-btn"
@@ -1460,7 +1466,7 @@
 
     <!-- Application Scripts -->
     <script src="https://cdn.socket.io/4.8.4/socket.io.min.js" defer></script>
-    <script src="./js/app.js?v=50" defer></script>
+    <script src="./js/app.js?v=51" defer></script>
     <script>
       // Register Service Worker for PWA
       if ("serviceWorker" in navigator) {

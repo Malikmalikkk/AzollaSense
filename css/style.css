@@ -1876,6 +1876,13 @@ input:checked+.slider-knob::before {
 .account-add-form .account-form-help { min-height: 0; color: var(--text-muted); line-height: 1.5; }
 .account-add-form #add-user-message.is-error { color: #a33b30; }
 .account-add-form button:disabled { opacity: .6; cursor: wait; }
+.farm-name-form { display: grid; gap: 8px; margin-top: 16px; }
+.farm-name-form label { font-size: 12px; font-weight: 700; }
+.farm-name-form input { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #d3dfd4; border-radius: 8px; font: inherit; }
+.farm-name-form button { padding: 10px; border: 0; border-radius: 8px; background: #276b38; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.farm-name-form button:disabled { opacity: .6; cursor: wait; }
+.farm-name-form p { min-height: 18px; margin: 0; font-size: 12px; color: #315b39; }
+.farm-name-form p.is-error { color: #a33b30; }
 @media (max-width: 560px) {
   .account-list-row { align-items: flex-start; flex-wrap: wrap; }
   .account-list-row > div { flex: 1 1 100%; }

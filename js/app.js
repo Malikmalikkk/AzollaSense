@@ -650,21 +650,64 @@
   }
   refreshLocalState();
 
+  const farmNameDisplay = byId("profile-farm-name");
+  const farmNameForm = byId("farm-name-form");
+  const farmNameInput = byId("farm-name-input");
+  async function loadFarmProfile() {
+    try {
+      const response = await fetch(backendUrl("/api/farm-profile"), { cache: "no-store", credentials: "same-origin" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not load the farm name.");
+      if (farmNameDisplay) farmNameDisplay.textContent = result.farm_name;
+      if (farmNameInput) farmNameInput.value = result.farm_name;
+    } catch (error) {
+      console.warn(error.message || "Could not load the farm name.");
+    }
+  }
+
+  if (farmNameForm) farmNameForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const message = byId("farm-name-message");
+    const saveButton = byId("farm-name-save");
+    const value = farmNameInput?.value.trim() || "";
+    message.textContent = "Saving…";
+    message.classList.remove("is-error");
+    if (saveButton) saveButton.disabled = true;
+    try {
+      const response = await fetch(backendUrl("/api/farm-profile"), {
+        method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ farm_name: value })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not save the farm name.");
+      if (farmNameDisplay) farmNameDisplay.textContent = result.farm_name;
+      if (farmNameInput) farmNameInput.value = result.farm_name;
+      message.textContent = "Farm name saved.";
+    } catch (error) {
+      message.textContent = error.message || "Could not reach the local server.";
+      message.classList.add("is-error");
+    } finally {
+      if (saveButton) saveButton.disabled = false;
+    }
+  });
+
   const logoutButton = byId("logout-btn");
   let currentAccountId = null;
   fetch(backendUrl("/api/auth/status"), { cache: "no-store", credentials: "same-origin" })
     .then((response) => response.ok ? response.json() : Promise.reject(new Error("Not signed in")))
-    .then((account) => {
+    .then(async (account) => {
       currentAccountId = account.user_id;
       const isAdmin = account.role === "admin";
       document.body.classList.remove("role-pending");
       document.body.classList.toggle("role-admin", isAdmin);
       document.body.classList.toggle("role-user", !isAdmin);
+      await loadFarmProfile();
       const name = byId("profile-username");
       const profile = byId("profile-btn");
       if (name && account.username) name.textContent = account.username;
       if (profile && account.username) profile.title = `Signed in as ${account.username}`;
       if (isAdmin) {
+        if (farmNameForm) farmNameForm.classList.remove("is-hidden");
         const accountTab = byId("account-management-tab");
         if (accountTab) accountTab.classList.remove("is-hidden");
         loadManagedUsers();

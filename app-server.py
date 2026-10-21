@@ -66,6 +66,10 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 # involved in registration, login, session validation, or dashboard access.
 os.makedirs(app.instance_path, exist_ok=True)
 AUTH_DB_PATH = os.path.join(app.instance_path, "auth.sqlite3")
+FARM_PROFILE_PATH = os.path.join(app.instance_path, "farm_profile.json")
+DEFAULT_FARM_NAME = "AzollaSense Farm"
+FARM_PROFILE_LOCK = threading.RLock()
+farm_name = DEFAULT_FARM_NAME
 SESSION_COOKIE = "azollasense_session"
 SESSION_IDLE_TIMEOUT_SECONDS = 5 * 60
 SESSION_CHECK_SECONDS = 5
@@ -90,6 +94,31 @@ alert_state_lock = threading.RLock()
 previous_alert_states = None
 system_alert_history = deque(maxlen=100)
 system_alert_sequence = 0
+
+
+def load_farm_profile():
+    global farm_name
+    try:
+        with open(FARM_PROFILE_PATH, "r", encoding="utf-8") as profile_file:
+            saved = json.load(profile_file)
+        value = saved.get("farm_name") if isinstance(saved, dict) else None
+        if isinstance(value, str) and value.strip() and len(value.strip()) <= 80:
+            farm_name = value.strip()
+    except (OSError, json.JSONDecodeError):
+        pass
+
+
+def save_farm_profile(value):
+    os.makedirs(os.path.dirname(FARM_PROFILE_PATH), exist_ok=True)
+    temporary_path = FARM_PROFILE_PATH + ".tmp"
+    with open(temporary_path, "w", encoding="utf-8") as profile_file:
+        json.dump({"farm_name": value}, profile_file, ensure_ascii=False, indent=2)
+        profile_file.flush()
+        os.fsync(profile_file.fileno())
+    os.replace(temporary_path, FARM_PROFILE_PATH)
+
+
+load_farm_profile()
 
 
 def init_push_db():
@@ -1698,6 +1727,35 @@ def auth_status():
     with AUTH_DB_LOCK, auth_db() as connection:
         configured = connection.execute("SELECT 1 FROM users LIMIT 1").fetchone() is not None
     return no_store(jsonify({"configured": configured, "authenticated": bool(g.user), "user_id": g.user["id"] if g.user else None, "username": g.user["username"] if g.user else None, "role": g.user["role"] if g.user else None, "is_admin": is_system_admin()}))
+
+
+@app.route("/api/farm-profile", methods=["GET", "POST"])
+def api_farm_profile():
+    global farm_name
+    if request.method == "GET":
+        with FARM_PROFILE_LOCK:
+            return no_store(jsonify({"farm_name": farm_name}))
+
+    if not is_system_admin():
+        return jsonify({"error": "Administrator access required."}), 403
+    data = request_json_object()
+    value = data.get("farm_name") if data else None
+    if not isinstance(value, str):
+        return jsonify({"error": "Enter a farm name."}), 400
+    value = value.strip()
+    if not value or len(value) > 80 or any(ord(character) < 32 or ord(character) == 127 for character in value):
+        return jsonify({"error": "Farm names must contain 1 to 80 printable characters."}), 400
+
+    with FARM_PROFILE_LOCK:
+        previous = farm_name
+        farm_name = value
+        try:
+            save_farm_profile(value)
+        except (OSError, UnicodeError) as exc:
+            farm_name = previous
+            print(f"[PROFILE] Could not save farm name: {exc}")
+            return jsonify({"error": "Could not save the farm name."}), 500
+    return no_store(jsonify({"success": True, "farm_name": value}))
 
 
 @app.route("/api/auth/setup", methods=["POST"])
