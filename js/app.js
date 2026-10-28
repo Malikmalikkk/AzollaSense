@@ -8,6 +8,11 @@
 (() => {
   "use strict";
 
+  // A restored installed-app page can execute cached scripts again. Keep one
+  // dashboard instance so it owns a single socket connection and event set.
+  if (window.__azollaSenseDashboardStarted) return;
+  window.__azollaSenseDashboardStarted = true;
+
   /* ------------------------------------------------------------------ */
   /* Helpers & element registry                                         */
   /* ------------------------------------------------------------------ */
@@ -383,9 +388,13 @@
   /* Backend connection state & live telemetry                           */
   /* ------------------------------------------------------------------ */
 
+  let connectionToastShown = false;
   dashboardEvents.on("connect", () => {
     localStateConnected = true;
-    showToast("Connected to the AzollaSense server.");
+    if (!connectionToastShown) {
+      connectionToastShown = true;
+      showToast("Connected to the AzollaSense server.");
+    }
     loadLatestBrowningCapture();
   });
 

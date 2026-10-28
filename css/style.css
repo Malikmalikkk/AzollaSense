@@ -2749,6 +2749,10 @@ body { font-size: var(--font-md); }
     height: 100%;
     min-height: 0;
   }
+  .bottom-nav-bar {
+    position: fixed;
+    bottom: 0;
+  }
   .screen-scroll-container {
     min-height: 0;
     -webkit-overflow-scrolling: touch;
