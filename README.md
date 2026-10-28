@@ -43,7 +43,7 @@ On Windows PowerShell:
 
 ```powershell
 .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r requirements-windows.txt
 python app-server-windows.py
 ```
 

@@ -52,7 +52,6 @@ MAX_FPS = 15
 # How often telemetry is broadcast while the camera stream is running
 STREAM_TELEMETRY_INTERVAL = 0.5
 CAPTURE_CAMERA_WARMUP_SECONDS = 5
-YOLO_CONFIDENCE_THRESHOLD = 0.25
 PH_TIMEZONE = ZoneInfo("Asia/Manila")
 CAPTURE_DIR = os.path.join(BASE_DIR, "assets", "captures")
 LATEST_CAPTURE_PATH = os.path.join(CAPTURE_DIR, "latest.json")
@@ -728,6 +727,7 @@ DEVICE_PREFERENCES_PATH = os.path.join(app.instance_path, "actuator_preferences.
 preferences_write_lock = threading.Lock()
 
 SENSOR_SETTINGS_DEFAULTS = {
+    "yolo_confidence": 0.25,
     "update_interval_seconds": 2,
     "temperature_max_c": 34.0,
     "ph_min": 6.5,
@@ -790,6 +790,11 @@ def save_sensor_settings():
 
 load_sensor_settings()
 print(f"[SETTINGS] Sensor settings file: {SENSOR_SETTINGS_PATH}")
+
+
+def yolo_confidence_threshold():
+    with settings_lock:
+        return sensor_settings["yolo_confidence"]
 
 
 def load_device_preferences():
@@ -1319,7 +1324,7 @@ def _capture_image(force=False):
     detection_count = 0
     if model is not None:
         try:
-            result = model(frame, verbose=False, conf=YOLO_CONFIDENCE_THRESHOLD)[0]
+            result = model(frame, verbose=False, conf=yolo_confidence_threshold())[0]
             brown_pct = green_pct = 0.0
             if result.masks is not None and result.boxes is not None:
                 masks = result.masks.data.cpu().numpy()
@@ -1363,6 +1368,14 @@ def _capture_image(force=False):
             _record_scheduled_occupancy(captured_at, record["brown_cov"], record["green_cov"])
         except sqlite3.Error as exc:
             print(f"[LOGS] Could not record daily occupancy: {exc}")
+        if record["brown_cov"] is not None and record["green_cov"] is not None:
+            azolla_coverage = min(100.0, record["brown_cov"] + record["green_cov"])
+            if azolla_coverage >= 95.0:
+                _emit_system_alert(
+                    "Harvest threshold reached",
+                    f"Today's capture detected Azolla across {azolla_coverage:.2f}% of the pond area. The 95% harvest threshold has been reached.",
+                    severity="success",
+                )
     if model is not None and brown_pct is not None and green_pct is not None:
         with state_lock:
             state["telemetry"]["brown_cov"] = round(brown_pct, 2)
@@ -1464,7 +1477,7 @@ def camera_stream_worker(generation):
 
             if model is not None:
                 try:
-                    result = model(frame, verbose=False, conf=YOLO_CONFIDENCE_THRESHOLD)[0]
+                    result = model(frame, verbose=False, conf=yolo_confidence_threshold())[0]
 
                     if result.masks is not None and result.boxes is not None:
                         masks_array = result.masks.data.cpu().numpy()
@@ -2191,7 +2204,7 @@ def api_settings():
             "rain_wet_threshold": (0, 4095), "rain_wet_below_threshold": (0, 1),
             "browning_alert_pct": (0, 100), "ph7_voltage": (0, 3.3),
             "ph4_voltage": (0, 3.3), "tank_depth_cm": (1, 500),
-            "water_level_offset_cm": (-100, 100),
+            "water_level_offset_cm": (-100, 100), "yolo_confidence": (0, 1),
         }[key]
         if not limits[0] <= value <= limits[1]:
             return jsonify({"success": False, "error": f"{key} is out of range."}), 400

@@ -1216,6 +1216,24 @@
                     </label>
                   </div>
                 </div>
+                <h3 class="settings-group-title" style="margin-top: 24px;">YOLO NCNN Model</h3>
+                <div class="settings-card-list">
+                  <div class="setting-row-card">
+                    <div class="setting-left-side">
+                      <span class="setting-label">Detection confidence</span>
+                      <span class="setting-help-text">Minimum confidence required to keep a model detection. Lower values detect more; higher values are stricter.</span>
+                    </div>
+                    <input
+                      class="config-input"
+                      data-setting="yolo_confidence"
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      aria-label="YOLO model confidence threshold"
+                    />
+                  </div>
+                </div>
                 <div id="device-reboot-controls" class="settings-card-list" style="margin-top: 8px;">
                   <div class="setting-row-card device-action-row">
                     <div class="setting-left-side">

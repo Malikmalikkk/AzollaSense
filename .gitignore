@@ -8,3 +8,5 @@ app-server-windows.py
 /__pycache__
 /runs
 /firmware/esp32
+AzollaSense Paper.docx
+requirements-windows.txt
