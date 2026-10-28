@@ -35,6 +35,12 @@
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Unable to sign in.");
+      // Close the virtual keyboard before opening the fixed-height dashboard.
+      // In installed Chrome apps, navigating while a field remains focused can
+      // leave the next page sized to the keyboard-reduced viewport.
+      document.activeElement?.blur();
+      window.scrollTo(0, 0);
+      await new Promise((resolve) => window.setTimeout(resolve, 180));
       location.replace("/");
     } catch (err) {
       error.textContent = err.message || "Could not reach the local server.";
