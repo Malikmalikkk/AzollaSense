@@ -2737,6 +2737,7 @@ body { font-size: var(--font-md); }
     overflow: hidden;
   }
   .app-viewport {
+    --mobile-nav-height: calc(76px + env(safe-area-inset-bottom));
     position: fixed;
     inset: 0;
     height: 100vh;
@@ -2752,9 +2753,12 @@ body { font-size: var(--font-md); }
   .bottom-nav-bar {
     position: fixed;
     bottom: 0;
+    height: var(--mobile-nav-height);
   }
   .screen-scroll-container {
     min-height: 0;
+    padding-bottom: calc(var(--mobile-nav-height) + 40px);
+    scroll-padding-bottom: calc(var(--mobile-nav-height) + 40px);
     -webkit-overflow-scrolling: touch;
   }
   #view-settings { transition: opacity .3s ease; }
