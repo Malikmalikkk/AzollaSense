@@ -906,9 +906,16 @@
         settingsBar.classList.remove("is-docked");
         return;
       }
+      // At the very top the bar belongs in its original position below the
+      // Settings heading.  Explicitly clearing this state also makes the
+      // return transition reliable after a user scrolls back up.
+      if (screenScroller.scrollTop <= 1) {
+        settingsBar.classList.remove("is-docked");
+        return;
+      }
       const stickyOffset = Number.parseFloat(window.getComputedStyle(settingsBar).top) || 0;
-      const scrollTop = screenScroller.getBoundingClientRect().top + stickyOffset;
-      const isDocked = settingsBar.getBoundingClientRect().top <= scrollTop + 1;
+      const dockLine = screenScroller.getBoundingClientRect().top + stickyOffset;
+      const isDocked = settingsBar.getBoundingClientRect().top <= dockLine + 1;
       settingsBar.classList.toggle("is-docked", isDocked);
     };
     screenScroller.addEventListener("scroll", () => {
