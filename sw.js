@@ -5,7 +5,7 @@
  * with an offline fallback to the app shell.
  */
 
-const CACHE_NAME = "azollasense-v46";
+const CACHE_NAME = "azollasense-v47";
 const APP_BASE = new URL("./", self.registration.scope);
 const appPath = (path) => new URL(path.replace(/^\//, ""), APP_BASE).href;
 
@@ -20,6 +20,7 @@ const CORE_ASSETS = [
   "./assets/tank.png",
   "./assets/pond.jpg",
   "./assets/welcome_bg.png",
+  "./assets/notification_sound.mp3",
 ];
 
 // Always fetch live streams, server status, API responses, and saved captures.
@@ -113,6 +114,9 @@ self.addEventListener("push", (event) => {
       body: payload.body || "A system status changed.",
       icon: appPath("assets/logo.svg"),
       badge: appPath("assets/logo.svg"),
+      // Service workers cannot play custom audio. Leaving notifications audible
+      // lets the operating system use the user's configured alert sound.
+      silent: false,
       tag: payload.tag || "azollasense-system-alert",
       data: { url: appPath("./") }
     });

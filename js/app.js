@@ -25,6 +25,16 @@
   // hosted separately (for example, on a camera-connected Raspberry Pi).
   const backendBase = (window.AZOLLASENSE_BACKEND_URL || window.location.origin).replace(/\/$/, "");
   const backendUrl = (path) => `${backendBase}${path}`;
+  const notificationSound = new Audio("./assets/notification_sound.mp3");
+  notificationSound.preload = "auto";
+
+  function playNotificationSound() {
+    // A browser may block audio until the user has interacted with the page.
+    // Ignore that restriction here so alert rendering is never interrupted.
+    notificationSound.pause();
+    notificationSound.currentTime = 0;
+    notificationSound.play().catch(() => {});
+  }
 
   async function loadLatestBrowningCapture() {
     try {
@@ -409,9 +419,9 @@
   const recentAlertItems = new Map();
 
   function addRecentNotification(alert) {
-    if (!recentNotifications || !alert || typeof alert.body !== "string") return;
+    if (!recentNotifications || !alert || typeof alert.body !== "string") return false;
     const id = alert.id ?? `${alert.created_at}-${alert.title}`;
-    if (recentAlertItems.has(id)) return;
+    if (recentAlertItems.has(id)) return false;
     const severity = ["success", "info", "warning", "error", "critical"].includes(alert.severity)
       ? alert.severity : "info";
     const item = document.createElement("article");
@@ -442,11 +452,13 @@
       recentAlertItems.get(oldestId)?.remove();
       recentAlertItems.delete(oldestId);
     }
+    return true;
   }
 
   function displaySystemAlert(alert) {
-    addRecentNotification(alert);
-    if (alert && typeof alert.body === "string") {
+    const isNewAlert = addRecentNotification(alert);
+    if (isNewAlert && alert && typeof alert.body === "string") {
+      playNotificationSound();
       showToast(`${alert.title ? `${alert.title}: ` : ""}${alert.body}`);
     }
   }
