@@ -97,8 +97,8 @@ const server = http.createServer((request, response) => {
     return;
   }
   if (shouldProxy(pathname)) {
-    if (!['GET', 'HEAD', 'POST', 'OPTIONS'].includes(request.method)) {
-      response.setHeader('Allow', 'GET, HEAD, POST, OPTIONS');
+    if (!['GET', 'HEAD', 'POST', 'DELETE', 'OPTIONS'].includes(request.method)) {
+      response.setHeader('Allow', 'GET, HEAD, POST, DELETE, OPTIONS');
       sendError(response, 405, 'Method Not Allowed');
       return;
     }

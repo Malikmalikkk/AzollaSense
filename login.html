@@ -10,7 +10,7 @@
   <link rel="manifest" href="./manifest.json">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="./css/style.css?v=56">
+  <link rel="stylesheet" href="./css/style.css?v=57">
 </head>
 <body class="auth-page">
   <main class="auth-card">
@@ -22,12 +22,15 @@
       <input id="auth-username" name="username" autocomplete="username" required minlength="3" maxlength="40">
       <label for="auth-password">Password</label>
       <input id="auth-password" name="password" type="password" autocomplete="current-password" required minlength="10" maxlength="256">
+      <label for="auth-setup-token" id="auth-setup-token-label" class="is-hidden">Setup token</label>
+      <input id="auth-setup-token" name="setup_token" type="password" autocomplete="off" class="is-hidden">
+      <p id="auth-setup-hint" class="auth-hint is-hidden">Required only when creating the first account from another device. Leave blank on the device itself.</p>
       <p id="auth-error" class="auth-error" role="alert" aria-live="polite"></p>
       <button id="auth-submit" class="auth-submit" type="submit" disabled>Login</button>
     </form>
     <p class="auth-local-note">Your account is stored on this Raspberry Pi. Internet access is not required.</p>
   </main>
-  <script src="./js/auth.js?v=4" defer></script>
+  <script src="./js/auth.js?v=5" defer></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {

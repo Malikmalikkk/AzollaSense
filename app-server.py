@@ -49,6 +49,8 @@ MODEL_PATH = os.path.join(BASE_DIR, "azolla_ncnn_model")
 FRAME_SIZE = 640
 # Upper bound for the stream framerate (keeps CPU / USB bandwidth sane)
 MAX_FPS = 15
+# Run segmentation at most twice a second; the camera stream itself stays smooth
+AI_INFERENCE_INTERVAL_SECONDS = 0.5
 # How often telemetry is broadcast while the camera stream is running
 STREAM_TELEMETRY_INTERVAL = 0.5
 CAPTURE_CAMERA_WARMUP_SECONDS = 5
@@ -57,8 +59,22 @@ CAPTURE_DIR = os.path.join(BASE_DIR, "assets", "captures")
 LATEST_CAPTURE_PATH = os.path.join(CAPTURE_DIR, "latest.json")
 SERIAL_PORT = os.environ.get("AZOLLASENSE_SERIAL_PORT", "").strip()
 SERIAL_BAUD = int(os.environ.get("AZOLLASENSE_SERIAL_BAUD", "115200"))
+# A drain or refill that cannot observe the expected water level within these
+# windows is treated as a sensor/actuator fault and stopped.
+PH_DRAIN_TIMEOUT_SECONDS = 10 * 60
+PH_REFILL_TIMEOUT_SECONDS = 15 * 60
+# Stop an active exchange if the level reading disappears for this long.
+PH_LEVEL_MISSING_GRACE_SECONDS = 15
+# Remote first-run setup requires this token; local (loopback) setup does not.
+SETUP_TOKEN = os.environ.get("AZOLLASENSE_SETUP_TOKEN", "").strip()
 
-app = Flask(__name__, static_url_path="", static_folder=BASE_DIR)
+# The application shell is served from explicit routes below. Never expose the
+# project directory itself: it contains source code, .git, and instance data.
+app = Flask(__name__, static_folder=None)
+# Allow deployments and tests to keep mutable state outside the source tree.
+_data_dir = os.environ.get("AZOLLASENSE_DATA_DIR", "").strip()
+if _data_dir:
+    app.instance_path = os.path.abspath(_data_dir)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # User accounts and opaque sessions live on this device. No cloud service is
@@ -486,7 +502,19 @@ def password_digest(password, salt):
 
 def is_loopback_request():
     try:
-        return ipaddress.ip_address(request.remote_addr or "").is_loopback
+        if not ipaddress.ip_address(request.remote_addr or "").is_loopback:
+            return False
+    except ValueError:
+        return False
+    # The optional Node.js proxy connects from loopback and replaces
+    # X-Forwarded-For with the original client address. Treat a proxied
+    # non-loopback client as remote so it still needs the setup token.
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if not forwarded:
+        return True
+    first_hop = forwarded.split(",")[0].strip()
+    try:
+        return ipaddress.ip_address(first_hop).is_loopback
     except ValueError:
         return False
 
@@ -525,7 +553,7 @@ def load_local_user():
 
     path = request.path
     public = (
-        path in ("/api/auth/status", "/api/auth/setup", "/api/auth/login", "/login")
+        path in ("/api/auth/status", "/api/auth/setup", "/api/auth/login", "/login", "/login.html")
         or path.startswith("/css/")
         or path.startswith("/js/")
         or (path.startswith("/assets/") and not path.startswith("/assets/captures/"))
@@ -605,6 +633,7 @@ state = {
         "sensor_updated_at": None,
     },
     "cv_updated_monotonic": None,
+    "sensor_received_monotonic": None,
     "ai_vision_enabled": True,
     "stream_active": False,
     "stream_viewers": 0,
@@ -628,18 +657,6 @@ def _numeric_value(value):
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         return None
     return float(value)
-
-
-def _timestamp_age_seconds(value, now):
-    if not value:
-        return None
-    try:
-        observed_at = datetime.fromisoformat(value)
-        if observed_at.tzinfo is None:
-            observed_at = observed_at.replace(tzinfo=PH_TIMEZONE)
-        return (now - observed_at.astimezone(PH_TIMEZONE)).total_seconds()
-    except (TypeError, ValueError):
-        return None
 
 
 def _insert_telemetry_log(entry):
@@ -680,8 +697,12 @@ def sample_telemetry_once(now=None, monotonic_now=None):
         telemetry = dict(state["telemetry"])
         actuators = dict(state["actuators"])
         cv_updated_monotonic = state.get("cv_updated_monotonic")
+        sensor_received_monotonic = state.get("sensor_received_monotonic")
 
-    sensor_age = _timestamp_age_seconds(telemetry.get("sensor_updated_at"), sampled_at)
+    sensor_age = (
+        monotonic_now - sensor_received_monotonic
+        if isinstance(sensor_received_monotonic, (int, float)) else None
+    )
     sensor_fresh = (
         actuators.get("device_connected") is True and sensor_age is not None
         and 0 <= sensor_age <= LOG_SENSOR_FRESH_SECONDS
@@ -713,6 +734,8 @@ serial_lock = threading.Lock()
 serial_device = None
 serial_ready = False
 ph_exchange_stage = "idle"
+ph_exchange_stage_started_monotonic = None
+ph_level_missing_since_monotonic = None
 rain_protection_active = False
 rain_dry_since_monotonic = None
 rain_wet_sample_count = 0
@@ -750,7 +773,10 @@ SENSOR_SETTINGS_DEFAULTS = {
 # Using Flask's instance directory for both reads and writes avoids choosing a
 # different settings file when the app is launched through another entry point.
 SENSOR_SETTINGS_PATH = os.path.join(app.instance_path, "sensor_settings.json")
-LEGACY_SENSOR_SETTINGS_PATH = os.path.join(BASE_DIR, "instance", "sensor_settings.json")
+LEGACY_SENSOR_SETTINGS_PATH = (
+    SENSOR_SETTINGS_PATH if _data_dir
+    else os.path.join(BASE_DIR, "instance", "sensor_settings.json")
+)
 settings_lock = threading.RLock()
 sensor_settings = dict(SENSOR_SETTINGS_DEFAULTS)
 
@@ -880,9 +906,68 @@ def sync_camera_cover():
     set_camera_cover(should_be_open)
 
 
+def advance_ph_exchange(stage, stage_started, ph_auto_enabled, ph, water_level, settings, actuators, now):
+    """Advance the automatic pH drain/refill state machine safely.
+
+    The exchange only starts when a trustworthy water-level reading is
+    available, and both the drain and refill stages have bounded runtimes so a
+    failed sensor cannot leave a valve or pump running indefinitely.
+    Returns ``(stage, stage_started, fault)`` where ``fault`` is ``"drain"``,
+    ``"refill"``, or ``None``.
+    """
+    if not ph_auto_enabled:
+        if stage != "idle":
+            actuators["solenoid"] = False
+            actuators["pump_auto_running"] = False
+        return "idle", None, None
+
+    ph_out_of_range = ph is not None and (ph < settings["ph_min"] or ph > settings["ph_max"])
+    ph_in_range = ph is not None and settings["ph_min"] <= ph <= settings["ph_max"]
+
+    if stage == "idle" and ph_out_of_range:
+        if water_level is None:
+            # Never open the drain without a level reading; wait for the sensor.
+            return stage, stage_started, None
+        if water_level <= settings["water_min_cm"]:
+            stage, stage_started = "refilling", now
+        else:
+            stage, stage_started = "draining", now
+
+    if stage == "draining":
+        if stage_started is None:
+            stage_started = now
+        actuators["solenoid"] = True
+        actuators["pump_auto_running"] = False
+        if water_level is not None and water_level <= settings["water_min_cm"]:
+            actuators["solenoid"] = False
+            actuators["pump_auto_running"] = True
+            stage, stage_started = "refilling", now
+        elif now - stage_started > PH_DRAIN_TIMEOUT_SECONDS:
+            actuators["solenoid"] = False
+            return "fault", None, "drain"
+    elif stage == "refilling":
+        if stage_started is None:
+            stage_started = now
+        actuators["solenoid"] = False
+        actuators["pump_auto_running"] = True
+        if water_level is not None and water_level >= settings["pump_target_cm"] + settings["pump_hysteresis_cm"]:
+            actuators["pump_auto_running"] = False
+            stage, stage_started = "wait_in_range", now
+        elif now - stage_started > PH_REFILL_TIMEOUT_SECONDS:
+            actuators["pump_auto_running"] = False
+            return "fault", None, "refill"
+    elif stage == "wait_in_range" and ph_in_range:
+        stage, stage_started = "idle", None
+    elif stage == "fault":
+        actuators["solenoid"] = False
+        actuators["pump_auto_running"] = False
+    return stage, stage_started, None
+
+
 def serial_reader_thread():
     """Read ESP32 JSON telemetry and keep the existing dashboard state current."""
     global serial_device, serial_ready, ph_exchange_stage
+    global ph_exchange_stage_started_monotonic, ph_level_missing_since_monotonic
     global rain_protection_active, rain_dry_since_monotonic
     global rain_wet_sample_count, rain_release_pending
     last_telemetry_at = None
@@ -980,6 +1065,7 @@ def serial_reader_thread():
                 now_monotonic = time.monotonic()
                 command = {"type": "heartbeat"}
                 with state_lock:
+                    state["sensor_received_monotonic"] = now_monotonic
                     for key in ("solenoid", "pump", "pump_manual", "pump_auto", "canopy_auto", "pump_auto_running"):
                         if key in message:
                             state["actuators"][key] = bool(message[key])
@@ -1013,29 +1099,63 @@ def serial_reader_thread():
                     elif rain_protection_active:
                         rain_release_pending = False
                     ph_auto_enabled = state["actuators"].get("ph_auto", False)
-                    if not ph_auto_enabled and ph_exchange_stage != "idle":
-                        ph_exchange_stage = "idle"
-                        state["actuators"]["solenoid"] = False
-                        state["actuators"]["pump_auto_running"] = False
-                    ph_out_of_range = ph is not None and (ph < settings["ph_min"] or ph > settings["ph_max"])
-                    ph_in_range = ph is not None and settings["ph_min"] <= ph <= settings["ph_max"]
-                    if ph_auto_enabled and ph_exchange_stage == "idle" and ph_out_of_range:
-                        ph_exchange_stage = "draining"
-                    if ph_exchange_stage == "draining":
-                        state["actuators"]["solenoid"] = True
-                        state["actuators"]["pump_auto_running"] = False
-                        if water_level is not None and water_level <= settings["water_min_cm"]:
-                            state["actuators"]["solenoid"] = False
-                            state["actuators"]["pump_auto_running"] = True
-                            ph_exchange_stage = "refilling"
-                    elif ph_exchange_stage == "refilling":
-                        state["actuators"]["solenoid"] = False
-                        state["actuators"]["pump_auto_running"] = True
-                        if water_level is not None and water_level >= settings["pump_target_cm"] + settings["pump_hysteresis_cm"]:
-                            state["actuators"]["pump_auto_running"] = False
-                            ph_exchange_stage = "wait_in_range"
-                    elif ph_exchange_stage == "wait_in_range" and ph_in_range:
-                        ph_exchange_stage = "idle"
+                    ph_fault = None
+                    if ph_auto_enabled and ph_exchange_stage in ("draining", "refilling"):
+                        if water_level is None:
+                            if ph_level_missing_since_monotonic is None:
+                                ph_level_missing_since_monotonic = now_monotonic
+                            elif now_monotonic - ph_level_missing_since_monotonic > PH_LEVEL_MISSING_GRACE_SECONDS:
+                                state["actuators"]["solenoid"] = False
+                                state["actuators"]["pump_auto_running"] = False
+                                ph_exchange_stage = "fault"
+                                ph_exchange_stage_started_monotonic = None
+                                ph_fault = "level"
+                        else:
+                            ph_level_missing_since_monotonic = None
+                    else:
+                        ph_level_missing_since_monotonic = None
+
+                    if ph_fault is None:
+                        ph_exchange_stage, ph_exchange_stage_started_monotonic, ph_fault = advance_ph_exchange(
+                            ph_exchange_stage,
+                            ph_exchange_stage_started_monotonic,
+                            ph_auto_enabled,
+                            ph,
+                            water_level,
+                            settings,
+                            state["actuators"],
+                            now_monotonic,
+                        )
+                    if ph_fault == "drain":
+                        _emit_system_alert(
+                            "Automatic pH exchange paused",
+                            "Draining exceeded 10 minutes without reaching the minimum water level. "
+                            "The drain valve was closed. Check the water-level sensor, then switch "
+                            "automatic pH control off and on to retry.",
+                            severity="warning",
+                            repeat_key="ph-exchange-drain-timeout",
+                            audience="admin",
+                        )
+                    elif ph_fault == "refill":
+                        _emit_system_alert(
+                            "Automatic pH exchange paused",
+                            "Refilling exceeded 15 minutes without reaching the target level. "
+                            "The pump was stopped. Check the water-level sensor and pump, then switch "
+                            "automatic pH control off and on to retry.",
+                            severity="warning",
+                            repeat_key="ph-exchange-refill-timeout",
+                            audience="admin",
+                        )
+                    elif ph_fault == "level":
+                        _emit_system_alert(
+                            "Automatic pH exchange paused",
+                            "The water-level reading disappeared during an automatic pH exchange. "
+                            "The drain valve and pump were stopped. Check the level sensor, then switch "
+                            "automatic pH control off and on to retry.",
+                            severity="warning",
+                            repeat_key="ph-exchange-level-missing",
+                            audience="admin",
+                        )
 
                     pump_should_run = ph_exchange_stage == "refilling"
                     state["actuators"]["pump_auto_running"] = pump_should_run
@@ -1127,6 +1247,10 @@ def serial_reader_thread():
                 last_telemetry_at = None
             with state_lock:
                 state["actuators"]["device_connected"] = False
+                state["sensor_received_monotonic"] = None
+                ph_exchange_stage = "idle"
+                ph_exchange_stage_started_monotonic = None
+                ph_level_missing_since_monotonic = None
                 state["camera_cover_open"] = None
                 state["camera_cover_moving"] = False
                 for key in ("water_distance_cm", "water_level", "temperature", "ph", "ph_voltage", "lux", "rain_sensor_raw", "rain_detected", "sensor_updated_at"):
@@ -1258,6 +1382,23 @@ def compute_coverage(masks_array, classes, target_class, height, width, total_pi
     mask = np.any(masks_array[classes == target_class], axis=0).astype(np.uint8)
     mask = cv2.resize(mask, (width, height), interpolation=cv2.INTER_NEAREST)
     return float(np.sum(mask) / total_pixels * 100.0)
+
+
+def build_mask_overlay(result, height, width):
+    """Return a cached BGR overlay and boolean mask for a segmentation result."""
+    if result.masks is None or result.boxes is None:
+        return None, None
+    masks_array = result.masks.data.cpu().numpy()
+    classes = result.boxes.cls.cpu().numpy().astype(int)
+    overlay = np.zeros((height, width, 3), dtype=np.uint8)
+    alpha = np.zeros((height, width), dtype=bool)
+    for mask, class_id in zip(masks_array, classes):
+        if class_id not in (0, 1):
+            continue
+        resized = cv2.resize(mask, (width, height), interpolation=cv2.INTER_NEAREST) > 0.5
+        overlay[resized] = (0, 0, 255) if class_id == 0 else (0, 255, 0)
+        alpha[resized] = True
+    return overlay, alpha
 
 
 def capture_is_due_today():
@@ -1445,6 +1586,11 @@ def camera_stream_worker(generation):
     camera = state["camera"]
     frame_period = 1.0 / MAX_FPS
     last_telemetry = 0.0
+    last_inference = 0.0
+    last_green_pct = 0.0
+    last_brown_pct = 0.0
+    cached_overlay = None
+    cached_overlay_alpha = None
 
     try:
         while True:
@@ -1472,37 +1618,54 @@ def camera_stream_worker(generation):
                 model = state["model"]
                 ai_enabled = state["ai_vision_enabled"]
 
-            green_pct = brown_pct = 0.0
+            green_pct = last_green_pct
+            brown_pct = last_brown_pct
             output_frame = frame
 
             if model is not None:
-                try:
-                    result = model(frame, verbose=False, conf=yolo_confidence_threshold())[0]
+                now = time.monotonic()
+                if now - last_inference >= AI_INFERENCE_INTERVAL_SECONDS:
+                    last_inference = now
+                    try:
+                        result = model(frame, verbose=False, conf=yolo_confidence_threshold())[0]
+                        green_pct = brown_pct = 0.0
 
-                    if result.masks is not None and result.boxes is not None:
-                        masks_array = result.masks.data.cpu().numpy()
-                        classes = result.boxes.cls.cpu().numpy().astype(int)
+                        if result.masks is not None and result.boxes is not None:
+                            masks_array = result.masks.data.cpu().numpy()
+                            classes = result.boxes.cls.cpu().numpy().astype(int)
 
-                        # Class 0 = browned / affected Azolla, class 1 = healthy Azolla
-                        brown_pct = compute_coverage(masks_array, classes, 0, height, width, total_pixels)
-                        green_pct = compute_coverage(masks_array, classes, 1, height, width, total_pixels)
+                            # Class 0 = browned / affected Azolla, class 1 = healthy Azolla
+                            brown_pct = compute_coverage(masks_array, classes, 0, height, width, total_pixels)
+                            green_pct = compute_coverage(masks_array, classes, 1, height, width, total_pixels)
 
-                    if ai_enabled:
-                        output_frame = result.plot(conf=False, labels=False, boxes=False, masks=True)
-                except Exception as exc:
-                    disable_model_after_error(exc)
-                    model = None
+                        last_green_pct, last_brown_pct = green_pct, brown_pct
+                        if ai_enabled:
+                            cached_overlay, cached_overlay_alpha = build_mask_overlay(result, height, width)
+                        else:
+                            cached_overlay = cached_overlay_alpha = None
+                    except Exception as exc:
+                        disable_model_after_error(exc)
+                        model = None
+                        cached_overlay = cached_overlay_alpha = None
+
+            if ai_enabled and cached_overlay is not None and cached_overlay_alpha is not None:
+                output_frame = frame.copy()
+                mask = cached_overlay_alpha
+                output_frame[mask] = (
+                    output_frame[mask].astype(np.uint16) * 55 // 100
+                    + cached_overlay[mask].astype(np.uint16) * 45 // 100
+                ).astype(np.uint8)
 
             # Broadcast telemetry at a fixed cadence while streaming
             now = time.monotonic()
             if now - last_telemetry >= STREAM_TELEMETRY_INTERVAL:
                 last_telemetry = now
                 with state_lock:
-                    if model is not None:
-                        state["telemetry"]["green_cov"] = round(green_pct, 2)
-                        state["telemetry"]["brown_cov"] = round(brown_pct, 2)
-                        state["telemetry"]["total_cov"] = round(green_pct + brown_pct, 2)
-                        state["cv_updated_monotonic"] = time.monotonic()
+                    if last_inference > 0 and state["model"] is not None:
+                        state["telemetry"]["green_cov"] = round(last_green_pct, 2)
+                        state["telemetry"]["brown_cov"] = round(last_brown_pct, 2)
+                        state["telemetry"]["total_cov"] = round(last_green_pct + last_brown_pct, 2)
+                        state["cv_updated_monotonic"] = last_inference
                     payload = dict(state["telemetry"])
                 socketio.emit("telemetry_update", payload)
 
@@ -1708,6 +1871,62 @@ def serve_login():
     return no_store(send_from_directory(BASE_DIR, "login.html"))
 
 
+@app.route("/index.html")
+def serve_index_alias():
+    return serve_index()
+
+
+@app.route("/login.html")
+def serve_login_alias():
+    return serve_login()
+
+
+def serve_static_file(directory, filename, cache_control="no-cache"):
+    response = send_from_directory(directory, filename)
+    response.headers["Cache-Control"] = cache_control
+    return response
+
+
+def _is_within_directory(path, directory):
+    """True when ``path`` resolves inside ``directory`` (symlinks included)."""
+    try:
+        target = os.path.realpath(path)
+        root = os.path.realpath(directory)
+        return os.path.commonpath([target, root]) == root
+    except (OSError, ValueError):
+        return False
+
+
+@app.route("/manifest.json")
+def serve_manifest():
+    return serve_static_file(BASE_DIR, "manifest.json")
+
+
+@app.route("/sw.js")
+def serve_service_worker():
+    return serve_static_file(BASE_DIR, "sw.js")
+
+
+@app.route("/css/<path:filename>")
+def serve_css(filename):
+    return serve_static_file(os.path.join(BASE_DIR, "css"), filename)
+
+
+@app.route("/js/<path:filename>")
+def serve_js(filename):
+    return serve_static_file(os.path.join(BASE_DIR, "js"), filename)
+
+
+@app.route("/assets/<path:filename>")
+def serve_asset(filename):
+    # Captures are private. Check the resolved path too, so variants such as
+    # "/assets/./captures/..." or a case-insensitive filesystem cannot skip the
+    # prefix-based authentication check in before_request.
+    if g.user is None and _is_within_directory(os.path.join(BASE_DIR, "assets", filename), CAPTURE_DIR):
+        return jsonify({"error": "Authentication required."}), 401
+    return serve_static_file(os.path.join(BASE_DIR, "assets"), filename)
+
+
 def set_session_cookie(response, token, local=False):
     response.set_cookie(SESSION_COOKIE, token, max_age=60 * 60 * 24 * 365 * 10,
                         httponly=True, secure=request_is_https(), samesite="Lax", path="/")
@@ -1776,6 +1995,14 @@ def auth_setup():
     data = request_json_object()
     if data is None:
         return jsonify({"error": "Expected a username and password."}), 400
+    if not is_loopback_request():
+        supplied_token = request.headers.get("X-AzollaSense-Setup-Token", "")
+        if not supplied_token:
+            supplied_token = data.get("setup_token", "")
+        if not SETUP_TOKEN:
+            return jsonify({"error": "Remote setup is disabled. Complete setup on the device itself or set AZOLLASENSE_SETUP_TOKEN on the server."}), 403
+        if not isinstance(supplied_token, str) or not hmac.compare_digest(supplied_token.encode("utf-8"), SETUP_TOKEN.encode("utf-8")):
+            return jsonify({"error": "A valid setup token is required for remote setup."}), 403
     username, password = data.get("username", ""), data.get("password", "")
     if isinstance(username, str):
         username = username.strip()

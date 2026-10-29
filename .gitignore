@@ -1,12 +1,35 @@
 /weights
-/AzollaML
 /assets/captures
 /instance
 /venv
+/.venv
 /.vscode
-app-server-windows.py
-/__pycache__
+__pycache__/
+*.pyc
 /runs
-/firmware/esp32
+
+# Local Docker Compose configuration (may contain the setup token).
+.env
+
+# AzollaML: keep the training scripts, ignore environments, datasets, weights,
+# and generated result images.
+/AzollaML/.venv
+/AzollaML/AzollaSense.v1
+/AzollaML/AzollaSense.v2
+/AzollaML/custom_test_results
+/AzollaML/test_results_visual
+/AzollaML/*.pt
+
+# ESP32: keep the sketch and design files, ignore local Arduino build output.
+/firmware/esp32/azollasense_esp32/build
+/firmware/esp32/AzollaSense_schem.pdf
+
 AzollaSense Paper.docx
+app-server-windows.py
 requirements-windows.txt
+
+# DOCKER IGNORES
+.dockerignore
+.env.example
+docker-compose.yml
+dockerfile

@@ -1841,6 +1841,7 @@ input:checked+.slider-knob::before {
 .auth-card label { display: block; margin: 16px 0 7px; font-size: 13px; font-weight: 700; }
 .auth-card input { box-sizing: border-box; width: 100%; padding: 13px 14px; border: 1px solid #d3dfd4; border-radius: 10px; background: #fbfdfb; color: #183b24; font: inherit; outline-color: #388e3c; }
 .auth-error { min-height: 20px; margin: 12px 0 4px; color: #b42318; font-size: 13px; }
+.auth-hint { margin: 8px 0 0; color: #718076; font-size: 12px; line-height: 1.5; }
 .auth-submit { width: 100%; padding: 13px; border: 0; border-radius: 10px; background: #276b38; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 .auth-submit:disabled { opacity: .65; cursor: wait; }
 .auth-local-note { margin: 22px 0 0; color: #718076; font-size: 12px; line-height: 1.6; text-align: center; }

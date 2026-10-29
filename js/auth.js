@@ -3,6 +3,9 @@
   const intro = document.getElementById("auth-intro");
   const username = document.getElementById("auth-username");
   const password = document.getElementById("auth-password");
+  const setupToken = document.getElementById("auth-setup-token");
+  const setupTokenLabel = document.getElementById("auth-setup-token-label");
+  const setupHint = document.getElementById("auth-setup-hint");
   const submit = document.getElementById("auth-submit");
   const error = document.getElementById("auth-error");
   let setupMode = false;
@@ -16,6 +19,9 @@
         intro.textContent = "Create the first local account to finish setup.";
         submit.textContent = "Create account";
         password.autocomplete = "new-password";
+        setupTokenLabel.classList.remove("is-hidden");
+        setupToken.classList.remove("is-hidden");
+        setupHint.classList.remove("is-hidden");
       }
       submit.disabled = false;
     })
@@ -31,7 +37,11 @@
     try {
       const response = await fetch(setupMode ? "/api/auth/setup" : "/api/auth/login", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: username.value.trim(), password: password.value })
+        body: JSON.stringify({
+          username: username.value.trim(),
+          password: password.value,
+          setup_token: setupMode ? setupToken.value : "",
+        })
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Unable to sign in.");
