@@ -8,8 +8,10 @@ __pycache__/
 *.pyc
 /runs
 
-# Local Docker Compose configuration (may contain the setup token).
+# Local Docker Compose configuration (may contain the setup token) and
+# host-specific overrides such as device passthrough.
 .env
+docker-compose.override.yml
 
 # AzollaML: keep the training scripts, ignore environments, datasets, weights,
 # and generated result images.

@@ -12,13 +12,18 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = ROOT / "app-server.py"
 
 
-def load_app(data_dir, setup_token=None):
+def load_app(data_dir, setup_token=None, kiosk_token=None, kiosk_user=None):
     """Import app-server.py with mutable state redirected to a temp directory."""
     os.environ["AZOLLASENSE_DATA_DIR"] = str(data_dir)
-    if setup_token is None:
-        os.environ.pop("AZOLLASENSE_SETUP_TOKEN", None)
-    else:
-        os.environ["AZOLLASENSE_SETUP_TOKEN"] = setup_token
+    for name, value in (
+        ("AZOLLASENSE_SETUP_TOKEN", setup_token),
+        ("AZOLLASENSE_KIOSK_TOKEN", kiosk_token),
+        ("AZOLLASENSE_KIOSK_USER", kiosk_user),
+    ):
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
     spec = importlib.util.spec_from_file_location(f"azollasense_test_{id(data_dir)}", MODULE_PATH)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -129,6 +134,76 @@ class RemoteSetupTokenTests(unittest.TestCase):
             headers={"X-AzollaSense-Setup-Token": "setup-secret"},
         )
         self.assertEqual(response.status_code, 200)
+
+
+class KioskAutoLoginTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.data_dir = tempfile.mkdtemp(prefix="azollasense-kiosk-")
+        cls.module = load_app(cls.data_dir, kiosk_token="kiosk-secret", kiosk_user="display")
+        cls.client = cls.module.app.test_client()
+        response = cls.client.post(
+            "/api/auth/setup",
+            json={"username": "display", "password": "correct-horse-battery"},
+        )
+        assert response.status_code == 200, response.get_data(as_text=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.data_dir, ignore_errors=True)
+        os.environ.pop("AZOLLASENSE_DATA_DIR", None)
+        os.environ.pop("AZOLLASENSE_KIOSK_TOKEN", None)
+        os.environ.pop("AZOLLASENSE_KIOSK_USER", None)
+
+    def test_wrong_token_is_rejected(self):
+        response = self.client.get("/kiosk?token=wrong")
+        self.assertEqual(response.status_code, 403)
+
+    def test_proxied_request_is_rejected(self):
+        # Cloudflare and the optional Node proxy connect from loopback; the
+        # forwarded client address must never unlock the kiosk route.
+        proxied = self.module.app.test_client()
+        proxied.environ_base["REMOTE_ADDR"] = "127.0.0.1"
+        proxied.environ_base["HTTP_X_FORWARDED_FOR"] = "203.0.113.9"
+        response = proxied.get("/kiosk?token=kiosk-secret")
+        self.assertEqual(response.status_code, 403)
+
+    def test_local_request_signs_the_kiosk_in(self):
+        anonymous = self.module.app.test_client()
+        self.assertEqual(anonymous.get("/").status_code, 302)
+
+        response = anonymous.get("/kiosk?token=kiosk-secret")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/")
+        self.assertEqual(anonymous.get("/api/auth/status").get_json()["username"], "display")
+        self.assertEqual(anonymous.get("/").status_code, 200)
+
+    def test_kiosk_replaces_its_own_session(self):
+        first = self.module.app.test_client()
+        first.get("/kiosk?token=kiosk-secret")
+        second = self.module.app.test_client()
+        response = second.get("/kiosk?token=kiosk-secret")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(second.get("/").status_code, 200)
+        # The kiosk owns the account's single session.
+        self.assertEqual(first.get("/api/auth/status").get_json()["authenticated"], False)
+
+
+class KioskDisabledTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.data_dir = tempfile.mkdtemp(prefix="azollasense-kiosk-off-")
+        cls.module = load_app(cls.data_dir)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.data_dir, ignore_errors=True)
+        os.environ.pop("AZOLLASENSE_DATA_DIR", None)
+
+    def test_kiosk_route_is_inert_without_a_token(self):
+        response = self.module.app.test_client().get("/kiosk?token=anything")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/login")
 
 
 class PhExchangeTests(unittest.TestCase):

@@ -67,6 +67,11 @@ PH_REFILL_TIMEOUT_SECONDS = 15 * 60
 PH_LEVEL_MISSING_GRACE_SECONDS = 15
 # Remote first-run setup requires this token; local (loopback) setup does not.
 SETUP_TOKEN = os.environ.get("AZOLLASENSE_SETUP_TOKEN", "").strip()
+# The wall-mounted kiosk signs itself in through /kiosk with this token. The
+# route only answers loopback requests, so a tunnel or reverse proxy cannot use
+# it even if the token leaks.
+KIOSK_TOKEN = os.environ.get("AZOLLASENSE_KIOSK_TOKEN", "").strip()
+KIOSK_USERNAME = os.environ.get("AZOLLASENSE_KIOSK_USER", "").strip()
 
 # The application shell is served from explicit routes below. Never expose the
 # project directory itself: it contains source code, .git, and instance data.
@@ -553,7 +558,7 @@ def load_local_user():
 
     path = request.path
     public = (
-        path in ("/api/auth/status", "/api/auth/setup", "/api/auth/login", "/login", "/login.html")
+        path in ("/api/auth/status", "/api/auth/setup", "/api/auth/login", "/login", "/login.html", "/kiosk")
         or path.startswith("/css/")
         or path.startswith("/js/")
         or (path.startswith("/assets/") and not path.startswith("/assets/captures/"))
@@ -2081,6 +2086,37 @@ def auth_logout():
     response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, secure=request_is_https(), samesite="Lax")
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+@app.route("/kiosk")
+def kiosk_autologin():
+    """Sign the local kiosk display in without typing a password.
+
+    Disabled unless AZOLLASENSE_KIOSK_TOKEN is set. Only loopback requests are
+    accepted, so the Cloudflare tunnel and any reverse proxy cannot reach it.
+    """
+    if not KIOSK_TOKEN:
+        return redirect("/login", code=302)
+    if not is_loopback_request():
+        return jsonify({"error": "Kiosk sign-in is only available on the local device."}), 403
+    supplied_token = request.args.get("token", "")
+    if not isinstance(supplied_token, str) or not hmac.compare_digest(supplied_token.encode("utf-8"), KIOSK_TOKEN.encode("utf-8")):
+        return jsonify({"error": "Invalid kiosk token."}), 403
+    with AUTH_DB_LOCK, auth_db() as connection:
+        if KIOSK_USERNAME:
+            row = connection.execute("SELECT id FROM users WHERE username = ? COLLATE NOCASE", (KIOSK_USERNAME,)).fetchone()
+        else:
+            row = connection.execute("SELECT id FROM users ORDER BY (role = 'admin') DESC, id LIMIT 1").fetchone()
+        if not row:
+            return redirect("/login", code=302)
+        # The kiosk always owns its account's single session, so a reboot or a
+        # browser restart replaces the old one instead of being refused.
+        connection.execute("BEGIN IMMEDIATE")
+        connection.execute("DELETE FROM sessions WHERE user_id = ?", (row["id"],))
+    token = create_session(row["id"], True)
+    if not token:
+        return redirect("/login", code=302)
+    return set_session_cookie(redirect("/", code=302), token, True)
 
 
 @app.route("/api/auth/users", methods=["GET"])

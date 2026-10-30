@@ -17,6 +17,9 @@ services:
       # Required for first-run setup from another device. Leave empty to allow
       # setup only from the device itself (loopback).
       AZOLLASENSE_SETUP_TOKEN: ${AZOLLASENSE_SETUP_TOKEN:-}
+      # Wall-mounted kiosk auto sign-in (loopback only). Leave empty to disable.
+      AZOLLASENSE_KIOSK_TOKEN: ${AZOLLASENSE_KIOSK_TOKEN:-}
+      AZOLLASENSE_KIOSK_USER: ${AZOLLASENSE_KIOSK_USER:-}
       # Optional ESP32 serial overrides.
       AZOLLASENSE_SERIAL_PORT: ${AZOLLASENSE_SERIAL_PORT:-}
       AZOLLASENSE_SERIAL_BAUD: ${AZOLLASENSE_SERIAL_BAUD:-115200}

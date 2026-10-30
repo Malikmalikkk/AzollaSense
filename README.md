@@ -93,6 +93,31 @@ group_add:
 
 The default image omits Raspberry Pi `Picamera2` because it is only available from Raspberry Pi OS repositories. On a host that provides `python3-picamera2`, build with `docker build --build-arg WITH_PICAMERA2=1 -t azollasense .`, or set `WITH_PICAMERA2: "1"` under `build.args` in `docker-compose.yml`.
 
+#### Wall-mounted kiosk
+
+A display attached to the device itself can sign in automatically instead of stopping at the login page. Set `AZOLLASENSE_KIOSK_TOKEN` (any long random string) and optionally `AZOLLASENSE_KIOSK_USER` (a dedicated account, so the display keeps its own session while you use a phone), then load:
+
+```
+http://127.0.0.1:5000/kiosk?token=<AZOLLASENSE_KIOSK_TOKEN>
+```
+
+`/kiosk` creates a fresh session for that account and redirects to the dashboard. It only answers requests from loopback, so the Cloudflare tunnel or a reverse proxy cannot use it, and it does nothing when the token is unset. A minimal X session that keeps the dashboard on screen:
+
+```sh
+#!/bin/sh
+xset s off; xset s noblank; xset -dpms
+unclutter -idle 0.5 -root &
+openbox-session &
+. /etc/azollasense/kiosk.env          # exports AZOLLASENSE_KIOSK_TOKEN
+until curl -fsS http://127.0.0.1:5000/api/auth/status >/dev/null; do sleep 2; done
+while true; do
+    chromium --kiosk --noerrdialogs --disable-infobars \
+        --disable-session-crashed-bubble --no-first-run \
+        "http://127.0.0.1:5000/kiosk?token=$AZOLLASENSE_KIOSK_TOKEN"
+    sleep 2
+done
+```
+
 Notes:
 
 - Build for a different architecture with `docker build --platform linux/arm64 ...`; on a 64-bit Raspberry Pi the default build is already `linux/arm64`.
