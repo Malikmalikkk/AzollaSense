@@ -27,9 +27,3 @@ __pycache__/
 AzollaSense Paper.docx
 app-server-windows.py
 requirements-windows.txt
-
-# DOCKER IGNORES
-.dockerignore
-.env.example
-docker-compose.yml
-dockerfile

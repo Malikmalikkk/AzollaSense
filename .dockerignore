@@ -1,0 +1,35 @@
+# Build context exclusions. Only the runtime files are copied by the Dockerfile,
+# so keep the context small and free of local state.
+.git
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose.yml
+README.md
+AzollaSense Paper.docx
+.env
+*.log
+
+# Large local-only training assets and model checkpoints.
+AzollaML
+weights
+runs
+
+# Machine-specific runtime state.
+instance
+assets/captures
+
+# Python caches and local environments.
+__pycache__
+**/__pycache__
+*.pyc
+.venv
+venv
+
+# Not needed inside the backend image.
+firmware
+tests
+app-server-windows.py
+requirements-windows.txt
+server.js
+.vscode

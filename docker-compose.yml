@@ -1,0 +1,41 @@
+services:
+  azollasense:
+    build:
+      context: .
+      args:
+        # Set to "1" on a Raspberry Pi OS-based host that provides
+        # python3-picamera2, then rebuild.
+        WITH_PICAMERA2: "0"
+    image: azollasense:latest
+    container_name: azollasense
+    restart: unless-stopped
+    init: true
+    ports:
+      - "5000:5000"
+    environment:
+      AZOLLASENSE_DATA_DIR: /data
+      # Required for first-run setup from another device. Leave empty to allow
+      # setup only from the device itself (loopback).
+      AZOLLASENSE_SETUP_TOKEN: ${AZOLLASENSE_SETUP_TOKEN:-}
+      # Optional ESP32 serial overrides.
+      AZOLLASENSE_SERIAL_PORT: ${AZOLLASENSE_SERIAL_PORT:-}
+      AZOLLASENSE_SERIAL_BAUD: ${AZOLLASENSE_SERIAL_BAUD:-115200}
+      # Optional web push.
+      AZOLLASENSE_VAPID_PUBLIC_KEY: ${AZOLLASENSE_VAPID_PUBLIC_KEY:-}
+      AZOLLASENSE_VAPID_PRIVATE_KEY: ${AZOLLASENSE_VAPID_PRIVATE_KEY:-}
+      AZOLLASENSE_VAPID_SUBJECT: ${AZOLLASENSE_VAPID_SUBJECT:-}
+    volumes:
+      - azollasense-data:/data
+      - azollasense-captures:/app/assets/captures
+    # Hardware passthrough is opt-in. On a Linux host (including a Raspberry Pi)
+    # uncomment the devices and groups that exist on your machine.
+    # devices:
+    #   - /dev/ttyACM0:/dev/ttyACM0   # ESP32 USB serial
+    #   - /dev/video0:/dev/video0     # camera, when applicable
+    # group_add:
+    #   - dialout
+    #   - video
+
+volumes:
+  azollasense-data:
+  azollasense-captures:
