@@ -15,17 +15,14 @@ ARG DEBIAN_FRONTEND=noninteractive
 FROM debian:trixie-slim AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
-# Set to 1 on Raspberry Pi OS-based hosts that provide python3-picamera2.
-ARG WITH_PICAMERA2=0
 
 # All application dependencies ship manylinux wheels, so no compiler toolchain
 # is required. Keeping this layer small matters on memory-constrained builders.
+# Picamera2 is only installed in the runtime stage: the virtualenv is created
+# with --system-site-packages, so it imports the runtime's system packages.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         python3 python3-venv ca-certificates \
- && if [ "$WITH_PICAMERA2" = "1" ]; then \
-        apt-get install -y --no-install-recommends python3-picamera2; \
-    fi \
  && rm -rf /var/lib/apt/lists/*
 
 # --system-site-packages lets an apt-installed python3-picamera2 be imported
