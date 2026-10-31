@@ -37,14 +37,14 @@ ENV PATH="/opt/venv/bin:$PATH" \
 
 RUN pip install --no-cache-dir --no-compile --upgrade pip setuptools wheel
 
-# PyPI's Linux torch wheels bundle CUDA libraries. Production runs on CPU, so
-# install the CPU build first on x86_64 to keep the image small. On arm64 the
-# PyPI wheels are already CPU-only.
-RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
-        pip install --no-cache-dir --no-compile torch torchvision \
-            --index-url https://download.pytorch.org/whl/cpu \
-        || echo "CPU torch wheels unavailable; falling back to PyPI"; \
-    fi
+# PyPI's Linux torch wheels bundle CUDA libraries on both x86_64 and arm64 (the
+# aarch64 build pulls nvidia-cudnn and friends, several GB). Production runs on
+# CPU, so install the CPU-only build from PyTorch's own index on every
+# architecture. If that index has no wheel for this platform, fall back to PyPI
+# so the build still succeeds.
+RUN pip install --no-cache-dir --no-compile torch torchvision \
+        --index-url https://download.pytorch.org/whl/cpu \
+    || pip install --no-cache-dir --no-compile torch torchvision
 
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir --no-compile --prefer-binary -r /tmp/requirements.txt

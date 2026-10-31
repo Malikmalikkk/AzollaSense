@@ -118,6 +118,21 @@ while true; do
 done
 ```
 
+#### Moving an existing native install into the container
+
+If the device already ran the app natively, stop the old service first (`sudo systemctl stop azolla-server && sudo systemctl disable azolla-server`) so the SQLite files are consistent and port 5000 is free, then copy the state into the volumes before the first start:
+
+```bash
+sudo docker volume create azollasense_azollasense-data
+sudo docker volume create azollasense_azollasense-captures
+sudo docker run --rm -v azollasense_azollasense-data:/data \
+    -v "$PWD/instance":/src:ro --entrypoint sh azollasense:latest \
+    -c 'cp -a /src/. /data/ && chown -R 1000:1000 /data'
+sudo docker run --rm -v azollasense_azollasense-captures:/caps \
+    -v "$PWD/assets/captures":/src:ro --entrypoint sh azollasense:latest \
+    -c 'cp -a /src/. /caps/ && chown -R 1000:1000 /caps'
+```
+
 Notes:
 
 - Build for a different architecture with `docker build --platform linux/arm64 ...`; on a 64-bit Raspberry Pi the default build is already `linux/arm64`.
@@ -125,6 +140,7 @@ Notes:
 - Set `AZOLLASENSE_DATA_DIR` to a different container path only if you also change the mounted volume.
 - If the build is killed with `cannot allocate memory`, `apt-get`/`dpkg` ran out of memory. The Dockerfile already serializes the builder and runtime stages; also run `docker builder prune -f` and give Docker Desktop at least 4 GB of memory before retrying.
 - The first build downloads the Debian packages, PyTorch, and Ultralytics, so it is network-bound. Later builds reuse the cached layers.
+- Torch and torchvision come from `https://download.pytorch.org/whl/cpu` on every architecture. PyPI's aarch64 torch wheel pulls CUDA packages (several GB) even on a CPU-only device, which exhausts small disks.
 
 ### Optional Node.js frontend proxy
 
