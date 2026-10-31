@@ -62,13 +62,21 @@ ARG WITH_PICAMERA2=0
 # avoids OOM kills on small Docker Desktop VMs and CI runners.
 COPY --from=builder /opt/venv /opt/venv
 
+# Picamera2 ships only in the Raspberry Pi archive, which is arm64/armhf only and
+# is not part of Debian. Add it on demand so x86_64 builds stay pure Debian.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         python3 \
         libgl1 libglib2.0-0 libgomp1 libsm6 \
         curl ca-certificates \
- && if [ "$WITH_PICAMERA2" = "1" ]; then \
-        apt-get install -y --no-install-recommends python3-picamera2; \
+ && if [ "$WITH_PICAMERA2" = "1" ] && [ "$(dpkg --print-architecture)" = "arm64" ]; then \
+        apt-get install -y --no-install-recommends gnupg \
+     && curl -fsSL https://archive.raspberrypi.com/debian/raspberrypi.gpg.key \
+            | gpg --dearmor -o /usr/share/keyrings/raspberrypi.gpg \
+     && echo "deb [signed-by=/usr/share/keyrings/raspberrypi.gpg] http://archive.raspberrypi.com/debian trixie main" \
+            > /etc/apt/sources.list.d/raspberrypi.list \
+     && apt-get update \
+     && apt-get install -y --no-install-recommends python3-picamera2; \
     fi \
  && rm -rf /var/lib/apt/lists/*
 

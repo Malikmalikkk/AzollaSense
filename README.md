@@ -91,7 +91,15 @@ group_add:
   - video
 ```
 
-The default image omits Raspberry Pi `Picamera2` because it is only available from Raspberry Pi OS repositories. On a host that provides `python3-picamera2`, build with `docker build --build-arg WITH_PICAMERA2=1 -t azollasense .`, or set `WITH_PICAMERA2: "1"` under `build.args` in `docker-compose.yml`.
+The default image omits Raspberry Pi `Picamera2` because it is only available from the Raspberry Pi archive, not Debian. On a 64-bit Raspberry Pi build with `docker build --build-arg WITH_PICAMERA2=1 -t azollasense .`, or set `WITH_PICAMERA2: "1"` under `build.args` in `docker-compose.yml`; the Dockerfile adds `archive.raspberrypi.com`, installs `python3-picamera2`, and leaves the setting inert on x86_64. The camera pipeline also needs the GPU/media devices, for example:
+
+```yaml
+devices:
+  - /dev/video0:/dev/video0
+  - /dev/media0:/dev/media0
+group_add:
+  - video
+```
 
 #### Wall-mounted kiosk
 
