@@ -168,6 +168,40 @@ class KioskAutoLoginTests(unittest.TestCase):
         response = proxied.get("/kiosk?token=kiosk-secret")
         self.assertEqual(response.status_code, 403)
 
+    def test_cloudflare_header_is_rejected(self):
+        proxied = self.module.app.test_client()
+        proxied.environ_base["REMOTE_ADDR"] = "127.0.0.1"
+        proxied.environ_base["HTTP_CF_CONNECTING_IP"] = "203.0.113.9"
+        response = proxied.get("/kiosk?token=kiosk-secret")
+        self.assertEqual(response.status_code, 403)
+
+    def test_docker_published_port_signs_the_kiosk_in(self):
+        # Docker proxies host traffic, so the browser arrives from the bridge
+        # gateway instead of loopback.
+        gateway = "172.18.0.1"
+        original = self.module.docker_bridge_gateway
+        self.module.docker_bridge_gateway = lambda: gateway
+        try:
+            host = self.module.app.test_client()
+            host.environ_base["REMOTE_ADDR"] = gateway
+            response = host.get("/kiosk?token=kiosk-secret")
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(host.get("/").status_code, 200)
+
+            # The tunnel also arrives through the gateway; its forwarding
+            # headers must keep it out.
+            tunnel = self.module.app.test_client()
+            tunnel.environ_base["REMOTE_ADDR"] = gateway
+            tunnel.environ_base["HTTP_X_FORWARDED_FOR"] = "203.0.113.9"
+            self.assertEqual(tunnel.get("/kiosk?token=kiosk-secret").status_code, 403)
+
+            # Another device on the LAN keeps its own address.
+            lan = self.module.app.test_client()
+            lan.environ_base["REMOTE_ADDR"] = "192.168.1.50"
+            self.assertEqual(lan.get("/kiosk?token=kiosk-secret").status_code, 403)
+        finally:
+            self.module.docker_bridge_gateway = original
+
     def test_local_request_signs_the_kiosk_in(self):
         anonymous = self.module.app.test_client()
         self.assertEqual(anonymous.get("/").status_code, 302)

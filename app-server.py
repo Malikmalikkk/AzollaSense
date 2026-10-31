@@ -505,15 +505,52 @@ def password_digest(password, salt):
     return hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2**14, r=8, p=1, dklen=32)
 
 
-def is_loopback_request():
+_docker_gateway = None
+
+
+def docker_bridge_gateway():
+    """Return the container's default gateway address, or "" when there is none.
+
+    Docker publishes container ports through a proxy, so a browser running on the
+    host reaches the container from the bridge gateway rather than 127.0.0.1.
+    """
+    global _docker_gateway
+    if _docker_gateway is None:
+        _docker_gateway = ""
+        try:
+            with open("/proc/net/route", encoding="ascii") as routes:
+                for line in routes.read().splitlines()[1:]:
+                    fields = line.split()
+                    if len(fields) >= 4 and fields[1] == "00000000":
+                        raw = int(fields[2], 16)
+                        _docker_gateway = ".".join(
+                            str((raw >> (8 * index)) & 0xFF) for index in range(4)
+                        )
+                        break
+        except (OSError, ValueError):
+            _docker_gateway = ""
+    return _docker_gateway
+
+
+def is_local_request(allow_bridge_gateway=False):
+    """True when the request comes from the device that runs the app.
+
+    With Docker, host traffic arrives from the bridge gateway; pass
+    allow_bridge_gateway=True to accept that address as local. Requests carrying
+    forwarding headers always come from another device (Cloudflare tunnel or the
+    optional Node.js proxy) and are rejected, so neither can reach the kiosk.
+    """
+    remote = request.remote_addr or ""
     try:
-        if not ipaddress.ip_address(request.remote_addr or "").is_loopback:
-            return False
+        local = ipaddress.ip_address(remote).is_loopback
     except ValueError:
+        local = False
+    if not local and allow_bridge_gateway:
+        local = bool(docker_bridge_gateway()) and remote == docker_bridge_gateway()
+    if not local:
         return False
-    # The optional Node.js proxy connects from loopback and replaces
-    # X-Forwarded-For with the original client address. Treat a proxied
-    # non-loopback client as remote so it still needs the setup token.
+    if request.headers.get("CF-Connecting-IP"):
+        return False
     forwarded = request.headers.get("X-Forwarded-For", "")
     if not forwarded:
         return True
@@ -522,6 +559,10 @@ def is_loopback_request():
         return ipaddress.ip_address(first_hop).is_loopback
     except ValueError:
         return False
+
+
+def is_loopback_request():
+    return is_local_request()
 
 
 def is_system_admin(user=None):
@@ -2092,12 +2133,13 @@ def auth_logout():
 def kiosk_autologin():
     """Sign the local kiosk display in without typing a password.
 
-    Disabled unless AZOLLASENSE_KIOSK_TOKEN is set. Only loopback requests are
-    accepted, so the Cloudflare tunnel and any reverse proxy cannot reach it.
+    Disabled unless AZOLLASENSE_KIOSK_TOKEN is set. Only local requests are
+    accepted (loopback, or the Docker bridge gateway that host traffic arrives
+    from), so the Cloudflare tunnel and any reverse proxy cannot reach it.
     """
     if not KIOSK_TOKEN:
         return redirect("/login", code=302)
-    if not is_loopback_request():
+    if not is_local_request(allow_bridge_gateway=True):
         return jsonify({"error": "Kiosk sign-in is only available on the local device."}), 403
     supplied_token = request.args.get("token", "")
     if not isinstance(supplied_token, str) or not hmac.compare_digest(supplied_token.encode("utf-8"), KIOSK_TOKEN.encode("utf-8")):

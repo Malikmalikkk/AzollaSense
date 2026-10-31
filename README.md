@@ -101,7 +101,7 @@ A display attached to the device itself can sign in automatically instead of sto
 http://127.0.0.1:5000/kiosk?token=<AZOLLASENSE_KIOSK_TOKEN>
 ```
 
-`/kiosk` creates a fresh session for that account and redirects to the dashboard. It only answers requests from loopback, so the Cloudflare tunnel or a reverse proxy cannot use it, and it does nothing when the token is unset. A minimal X session that keeps the dashboard on screen:
+`/kiosk` creates a fresh session for that account and redirects to the dashboard. It only answers requests from the device itself: loopback, or the bridge gateway that Docker presents for traffic from the host. Requests carrying forwarding headers (`X-Forwarded-For`, `CF-Connecting-IP`) are always refused, so the Cloudflare tunnel or a reverse proxy cannot use it, and it does nothing when the token is unset. Browsers on other devices on the LAN keep their own address and are refused too. A minimal X session that keeps the dashboard on screen:
 
 ```sh
 #!/bin/sh
